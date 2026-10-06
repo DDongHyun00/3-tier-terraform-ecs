@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html
+  xmlns:th="http://www.thymeleaf.org"
+  xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+>
+  <body>
+    <div th:fragment="header">
+      <header class="site-header">
+        <h1>📋 게시판</h1>
+        <nav>
+          <!-- 공통 메뉴 -->
+          <a th:href="@{/posts}">📋 게시글 목록</a>
+
+          <!-- 로그인 상태 -->
+          <span sec:authorize="isAuthenticated()">
+            <a th:href="@{/posts/new}">✏️ 새 글 작성</a>
+            <a th:href="@{/mypage}">👤 마이페이지</a>
+            <span sec:authorize="hasRole('ADMIN')">
+              <a th:href="@{/admin/dashboard}">⚙️ 관리자 대시보드</a>
+            </span>
+            <form th:action="@{/logout}" method="post" style="display: inline">
+              <button type="submit">🚪 로그아웃</button>
+            </form>
+          </span>
+
+          <!-- 비로그인 상태 -->
+          <span sec:authorize="isAnonymous()">
+            <a th:href="@{/login}">🔑 로그인</a>
+            <a th:href="@{/signup}">📝 회원가입</a>
+          </span>
+        </nav>
+
+        <!-- 로그인 상태일 때만 알림 아이콘 표시 -->
+        <div id="notificationIcon" sec:authorize="isAuthenticated()">
+          🔔 <span id="notifCount" class="badge">0</span>
+        </div>
+      </header>
+
+      <!-- 로그인 상태일 때만 SSE 스크립트 실행 -->
+      <script sec:authorize="isAuthenticated()">
+        let notifCount = 0;
+
+        // 페이지 로드 시 서버에서 읽지 않은 알림 개수 가져오기
+        fetch("/api/notifications/unreadCount")
+          .then((res) => res.json())
+          .then((count) => {
+            notifCount = count;
+            document.getElementById("notifCount").innerText = notifCount;
+            console.log("📊 초기 알림 개수:", count);
+          })
+          .catch((error) => {
+            console.error("알림 개수 조회 실패:", error);
+          });
+
+        // SSE 연결
+        const eventSource = new EventSource("/api/notifications/subscribe");
+
+        eventSource.addEventListener("notification", function (event) {
+          notifCount++;
+          document.getElementById("notifCount").innerText = notifCount;
+          console.log("📩 알림:", event.data);
+          if (document.getElementById("notificationList")) {
+            loadNotifications();
+          }
+        });
+
+        eventSource.onerror = function (event) {
+          console.error("SSE 연결 오류:", event);
+        };
+      </script>
+    </div>
+  </body>
+</html>

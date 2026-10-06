@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title th:text="${status} + ' 에러'">Error</title>
+    <link rel="stylesheet" th:href="@{/css/board.css}" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="board-container">
+      <div class="error-container">
+        <div class="error-icon">
+          <i class="fas fa-exclamation-circle"></i>
+        </div>
+        <h1 class="error-code" th:text="${status}">Error</h1>
+        <h2 class="error-title">오류가 발생했습니다</h2>
+        <p
+          class="error-message"
+          th:text="${message} ?: '예기치 못한 오류가 발생했습니다.'"
+        ></p>
+        <div class="error-actions">
+          <a th:href="@{/}" class="btn-back">
+            <i class="fas fa-home"></i> 메인으로 돌아가기
+          </a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

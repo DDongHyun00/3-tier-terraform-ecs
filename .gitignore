@@ -1,0 +1,9 @@
+# 로컬 작업용 문서
+작업현황.md
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log

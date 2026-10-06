@@ -1,0 +1,43 @@
+# Gradle build output
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Gradle cache
+.gradle/
+
+# IntelliJ IDEA project files
+.idea/
+*.iml
+
+# VSCode project files
+.vscode/
+
+# Logs
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Out directory (compiled classes, etc.)
+/out/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Compiled class files
+*.class
+*.class.uniqueId*
+
+# Reports and analysis
+
+# Bin files
+*.bin
+
+# Uploads or generated files
+/uploads/
+
+# Ignore ERD auto-backups or design files
+*.erd

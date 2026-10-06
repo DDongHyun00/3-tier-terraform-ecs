@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html
+  xmlns:th="http://www.thymeleaf.org"
+  xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="_csrf" th:content="${_csrf.token}" />
+    <meta name="_csrf_header" th:content="${_csrf.headerName}" />
+    <title>게시글 상세</title>
+    <link rel="stylesheet" th:href="@{/css/board.css}" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div th:replace="~{layout/header :: header}"></div>
+    <div class="board-container">
+      <!-- 게시글 헤더 -->
+      <header class="board-header">
+        <div class="header-top">
+          <h2 class="board-title post-title" th:text="${post.title}"></h2>
+          <div class="post-actions">
+            <div class="post-actions-group" sec:authorize="isAuthenticated()">
+              <button
+                id="post-like-btn"
+                type="button"
+                th:data-post-id="${post.postId}"
+                th:classappend="${postLikedByMe} ? ' liked' : ''"
+                class="btn-like"
+              >
+                <i class="fas fa-heart"></i>
+                <span
+                  th:text="${postLikedByMe} ? '좋아요 취소' : '좋아요'"
+                ></span>
+              </button>
+            </div>
+
+            <div class="post-actions-group" th:if="${ownedByMe}">
+              <a
+                th:href="@{/posts/{id}/editForm(id=${post.postId})}"
+                class="btn-edit"
+              >
+                <i class="fas fa-edit"></i> 수정
+              </a>
+              <form
+                th:action="@{/posts/{id}/delete(id=${post.postId})}"
+                method="post"
+                style="display: inline"
+              >
+                <button type="submit" class="btn-delete">
+                  <i class="fas fa-trash"></i> 삭제
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="post-meta">
+          <span class="author"
+            ><i class="fas fa-user"></i>
+            <strong th:text="${post.user.nickname}"></strong
+          ></span>
+          <span class="date"
+            ><i class="fas fa-clock"></i>
+            <span
+              th:text="${#temporals.format(post.createdAt,'yyyy-MM-dd HH:mm:ss')}"
+            ></span
+          ></span>
+          <span class="views"
+            ><i class="fas fa-eye"></i> <span th:text="${post.viewCount}"></span
+          ></span>
+          <span class="likes"
+            ><i class="fas fa-heart"></i>
+            <span id="post-like-count" th:text="${postLikeCount}"></span
+          ></span>
+        </div>
+      </header>
+
+      <!-- 본문 -->
+      <div class="post-content">
+        <h3 class="content-title"><i class="fas fa-file-text"></i> 내용</h3>
+        <div class="content-body">
+          <p th:text="${post.content}"></p>
+        </div>
+      </div>
+
+      <!-- 첨부파일 -->
+      <div
+        class="attachments"
+        th:if="${post.files != null and !post.files.isEmpty()}"
+      >
+        <h4><i class="fas fa-paperclip"></i> 첨부파일</h4>
+        <ul>
+          <li th:each="file : ${post.files}">
+            <a
+              th:href="@{/files/{id}/download(id=${file.id})}"
+              th:text="${file.originalName}"
+            ></a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 댓글 영역 -->
+      <section class="comments">
+        <h3><i class="fas fa-comments"></i> 댓글</h3>
+        <div id="comment-list">
+          <div
+            th:each="c : ${comments}"
+            class="comment-item"
+            th:attr="data-comment-id=${c.commentId}"
+          >
+            <div th:if="${c.parentId == null}">
+              <div class="comment-header">
+                <div class="comment-meta">
+                  <strong th:text="${c.author}"></strong>
+                  <span
+                    class="comment-date"
+                    th:text="${#temporals.format(c.createdAt, 'yyyy-MM-dd HH:mm:ss')}"
+                  ></span>
+                </div>
+                <div class="comment-actions">
+                  <!-- 댓글 좋아요 버튼 -->
+                  <button
+                    sec:authorize="isAuthenticated()"
+                    class="btn-like"
+                    type="button"
+                    th:classappend="${c.likedByMe} ? ' liked' : ''"
+                    th:data-post-id="${post.postId}"
+                    th:data-comment-id="${c.commentId}"
+                  >
+                    <!-- type 명시 -->
+                    ❤️
+                    <span
+                      class="comment-like-count"
+                      th:text="${c.likeCount}"
+                    ></span>
+                  </button>
+
+                  <!-- 본인만 수정/삭제 가능 -->
+                  <button
+                    sec:authorize="isAuthenticated()"
+                    th:if="${#authentication.name == c.username}"
+                    type="button"
+                    class="btn-edit"
+                    th:data-post-id="${post.postId}"
+                    th:data-comment-id="${c.commentId}"
+                  >
+                    수정
+                  </button>
+
+                  <button
+                    sec:authorize="isAuthenticated()"
+                    th:if="${#authentication.name == c.username}"
+                    type="button"
+                    class="btn-delete"
+                    th:data-post-id="${post.postId}"
+                    th:data-comment-id="${c.commentId}"
+                  >
+                    삭제
+                  </button>
+
+                  <!-- 답글 버튼 -->
+                  <button
+                    sec:authorize="isAuthenticated()"
+                    type="button"
+                    class="btn-reply-toggle"
+                    th:attr="data-target='reply-form-' + ${c.commentId}"
+                  >
+                    <i class="fas fa-reply"></i> 답글
+                  </button>
+                </div>
+              </div>
+              <!-- 댓글 본문 -->
+              <p
+                class="comment-body"
+                th:attr="id='comment-content-' + ${c.commentId}"
+                th:text="${c.content}"
+              ></p>
+
+              <!-- 숨겨진 댓글 수정 폼 -->
+              <div
+                class="comment-edit-form"
+                th:attr="id='comment-edit-form-' + ${c.commentId}"
+                style="display: none"
+              >
+                <textarea
+                  th:attr="id='comment-edit-input-' + ${c.commentId}"
+                ></textarea>
+                <button
+                  type="button"
+                  class="btn-save-edit"
+                  th:data-post-id="${post.postId}"
+                  th:data-comment-id="${c.commentId}"
+                >
+                  확인
+                </button>
+                <button
+                  type="button"
+                  class="btn-cancel-edit"
+                  th:data-comment-id="${c.commentId}"
+                >
+                  취소
+                </button>
+              </div>
+
+              <!-- 대댓글 (서버 렌더된 기존 것들) -->
+              <div
+                th:each="child : ${comments}"
+                th:if="${child.parentId == c.commentId}"
+                class="reply-item"
+                th:attr="data-comment-id=${child.commentId}"
+              >
+                <div class="comment-header">
+                  <div class="comment-meta">
+                    ↳ <strong th:text="${child.author}"></strong>
+                    <span
+                      class="comment-date"
+                      th:text="${#temporals.format(child.createdAt, 'yyyy-MM-dd HH:mm:ss')}"
+                    ></span>
+                  </div>
+                  <div class="comment-actions">
+                    <button
+                      sec:authorize="isAuthenticated()"
+                      class="btn-like"
+                      type="button"
+                      th:classappend="${child.likedByMe} ? ' liked' : ''"
+                      th:data-post-id="${post.postId}"
+                      th:data-comment-id="${child.commentId}"
+                    >
+                      ❤️
+                      <span
+                        class="comment-like-count"
+                        th:text="${child.likeCount}"
+                      ></span>
+                    </button>
+
+                    <button
+                      sec:authorize="isAuthenticated()"
+                      th:if="${#authentication.name == child.username}"
+                      type="button"
+                      class="btn-edit"
+                      th:data-post-id="${post.postId}"
+                      th:data-comment-id="${child.commentId}"
+                    >
+                      수정
+                    </button>
+                    <button
+                      sec:authorize="isAuthenticated()"
+                      th:if="${#authentication.name == child.username}"
+                      type="button"
+                      class="btn-delete"
+                      th:data-post-id="${post.postId}"
+                      th:data-comment-id="${child.commentId}"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+                <!-- 대댓글 본문 -->
+                <p
+                  class="comment-body"
+                  th:attr="id='comment-content-' + ${child.commentId}"
+                  th:text="${child.content}"
+                ></p>
+                <!-- 숨겨진 대댓글 수정 폼 -->
+                <div
+                  class="comment-edit-form"
+                  th:attr="id='comment-edit-form-' + ${child.commentId}"
+                  style="display: none"
+                >
+                  <textarea
+                    th:attr="id='comment-edit-input-' + ${child.commentId}"
+                  ></textarea>
+                  <button
+                    type="button"
+                    class="btn-save-edit"
+                    th:data-post-id="${post.postId}"
+                    th:data-comment-id="${child.commentId}"
+                  >
+                    확인
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-cancel-edit"
+                    th:data-comment-id="${child.commentId}"
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+
+              <!-- ✅ 대댓글 입력 폼: 닉네임 표시 추가 -->
+              <div
+                th:id="'reply-form-' + ${c.commentId}"
+                class="reply-form-box"
+                style="display: none"
+                sec:authorize="isAuthenticated()"
+              >
+                <div class="reply-author" th:text="${nickname}"></div>
+                <textarea
+                  rows="3"
+                  placeholder="대댓글 입력..."
+                  class="reply-content"
+                ></textarea>
+                <div class="reply-actions">
+                  <button
+                    type="button"
+                    class="btn-reply-submit"
+                    th:data-post-id="${post.postId}"
+                    th:data-parent-id="${c.commentId}"
+                  >
+                    <i class="fas fa-paper-plane"></i> 등록
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-cancel"
+                    th:attr="data-target='reply-form-' + ${c.commentId}"
+                  >
+                    <i class="fas fa-times"></i> 취소
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 새 댓글 입력 -->
+        <div sec:authorize="isAuthenticated()" class="comment-form">
+          <textarea
+            id="new-comment-content"
+            rows="3"
+            cols="50"
+            placeholder="댓글을 입력해주세요..."
+          ></textarea>
+          <button
+            type="button"
+            id="btn-comment-submit"
+            th:data-post-id="${post.postId}"
+            class="btn-comment"
+          >
+            <i class="fas fa-paper-plane"></i> 댓글 달기
+          </button>
+        </div>
+
+        <div sec:authorize="isAnonymous()" class="login-prompt">
+          <p>
+            <i class="fas fa-info-circle"></i> 댓글을 작성하려면
+            <a th:href="@{/login}">로그인</a> 해주세요.
+          </p>
+        </div>
+      </section>
+
+      <div class="back-section">
+        <a th:href="@{/posts}" class="btn-back"
+          ><i class="fas fa-arrow-left"></i> 목록으로</a
+        >
+      </div>
+    </div>
+
+    <!-- JS -->
+    <!-- 로그인 유저/닉네임 주입 -->
+    <script th:inline="javascript">
+      const currentUser = /*[[${#authentication.name}]]*/ null; // 아이디(권한 체크용)
+      const currentNickname = /*[[${nickname}]]*/ null; // 닉네임(UI 표시용)
+    </script>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const csrfToken = document.querySelector('meta[name="_csrf"]')?.content;
+        const csrfHeader = document.querySelector(
+          'meta[name="_csrf_header"]'
+        )?.content;
+
+        // -------- 날짜 유틸 (프랙셔널 초가 3자리를 넘어오는 경우도 안전 처리) --------
+        function normalizeIso(s) {
+          if (!s) return s;
+          let x = String(s).replace(" ", "T");
+          x = x.replace(/(\.\d{3})\d+/, "$1"); // 마이크로초 → 밀리초로 절단
+          return x;
+        }
+        function formatDate(isoString) {
+          const d = new Date(normalizeIso(isoString));
+          if (isNaN(d.getTime())) return String(isoString); // 혹시라도 파싱 실패 시 원문 노출
+          const yyyy = d.getFullYear();
+          const MM = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          const hh = String(d.getHours()).padStart(2, "0");
+          const mm = String(d.getMinutes()).padStart(2, "0");
+          const ss = String(d.getSeconds()).padStart(2, "0");
+          return `${yyyy}-${MM}-${dd} ${hh}:${mm}:${ss}`;
+        }
+
+        // -------- 게시글 좋아요 --------
+        const postLikeBtn = document.getElementById("post-like-btn");
+        const postLikeCnt = document.getElementById("post-like-count");
+        if (postLikeBtn) {
+          postLikeBtn.addEventListener("click", async () => {
+            const postId = postLikeBtn.dataset.postId;
+            const liked = postLikeBtn.classList.contains("liked");
+            const method = liked ? "DELETE" : "POST";
+            const res = await fetch(`/posts/${postId}/like`, {
+              method,
+              headers: {
+                [csrfHeader]: csrfToken,
+                "X-Requested-With": "XMLHttpRequest",
+              },
+              credentials: "same-origin",
+            });
+            if (res.ok) {
+              const data = await res.json();
+              postLikeCnt.textContent = data.count;
+              postLikeBtn.classList.toggle("liked", data.liked);
+              postLikeBtn.querySelector("span").textContent = data.liked
+                ? "좋아요 취소"
+                : "좋아요";
+            }
+          });
+        }
+
+        // -------- DOM 생성 유틸 (댓글/대댓글) --------
+        function makeCommentHtml({
+          postId,
+          id,
+          author,
+          username,
+          createdAt,
+          content,
+          likeCount,
+        }) {
+          const canEdit = username && currentUser && username === currentUser;
+          return `
+    <div class="comment-item" data-comment-id="${id}">
+      <div class="comment-header">
+        <div class="comment-meta">
+          <strong>${author}</strong>
+          <span class="comment-date">${formatDate(createdAt)}</span>
+        </div>
+        <div class="comment-actions">
+          <button type="button" class="btn-like" data-post-id="${postId}" data-comment-id="${id}">
+            ❤️ <span class="comment-like-count">${likeCount ?? 0}</span>
+          </button>
+          ${
+            canEdit
+              ? `
+            <button type="button" class="btn-edit" data-post-id="${postId}" data-comment-id="${id}">수정</button>
+            <button type="button" class="btn-delete" data-post-id="${postId}" data-comment-id="${id}">삭제</button>
+          `
+              : ""
+          }
+          <button type="button" class="btn-reply-toggle" data-target="reply-form-${id}">답글</button>
+        </div>
+      </div>
+
+      <!-- 댓글 본문 -->
+      <p class="comment-body" id="comment-content-${id}">${content}</p>
+
+      <!-- ✨ 숨겨진 수정 폼 추가 -->
+      <div class="comment-edit-form" id="comment-edit-form-${id}" style="display:none;">
+        <textarea rows="3" class="comment-edit-input" id="comment-edit-input-${id}"></textarea>
+        <div class="comment-edit-actions">
+          <button type="button" class="btn-save-edit" data-post-id="${postId}" data-comment-id="${id}">저장</button>
+          <button type="button" class="btn-cancel-edit" data-comment-id="${id}">취소</button>
+        </div>
+      </div>
+
+      <!-- 대댓글 입력 폼 -->
+      <div class="reply-form-box" id="reply-form-${id}" style="display:none;">
+        <div class="reply-author">${currentNickname ?? ""}</div>
+        <textarea rows="3" class="reply-content"></textarea>
+        <div class="reply-actions">
+          <button type="button" class="btn-reply-submit" data-post-id="${postId}" data-parent-id="${id}">등록</button>
+          <button type="button" class="btn-cancel" data-target="reply-form-${id}">취소</button>
+        </div>
+      </div>
+    </div>
+  `;
+        }
+
+        function makeReplyHtml({
+          postId,
+          id,
+          author,
+          username,
+          createdAt,
+          content,
+          likeCount,
+        }) {
+          const canEdit = username && currentUser && username === currentUser;
+          return `
+    <div class="reply-item" data-comment-id="${id}">
+      <div class="comment-header">
+        <div class="comment-meta">
+          ↳ <strong>${author}</strong>
+          <span class="comment-date">${formatDate(createdAt)}</span>
+        </div>
+        <div class="comment-actions">
+          <button type="button" class="btn-like" data-post-id="${postId}" data-comment-id="${id}">
+            ❤️ <span class="comment-like-count">${likeCount ?? 0}</span>
+          </button>
+          ${
+            canEdit
+              ? `
+            <button type="button" class="btn-edit" data-post-id="${postId}" data-comment-id="${id}">수정</button>
+            <button type="button" class="btn-delete" data-post-id="${postId}" data-comment-id="${id}">삭제</button>
+          `
+              : ""
+          }
+        </div>
+      </div>
+
+      <!-- 대댓글 본문 -->
+      <p class="comment-body" id="comment-content-${id}">${content}</p>
+
+      <!-- ✨ 숨겨진 수정 폼 추가 -->
+      <div class="comment-edit-form" id="comment-edit-form-${id}" style="display:none;">
+        <textarea rows="3" class="comment-edit-input" id="comment-edit-input-${id}"></textarea>
+        <div class="comment-edit-actions">
+          <button type="button" class="btn-save-edit" data-post-id="${postId}" data-comment-id="${id}">저장</button>
+          <button type="button" class="btn-cancel-edit" data-comment-id="${id}">취소</button>
+        </div>
+      </div>
+    </div>
+  `;
+        }
+
+        // -------- 댓글 작성 --------
+        document
+          .getElementById("btn-comment-submit")
+          ?.addEventListener("click", async (e) => {
+            const postId = e.target.dataset.postId;
+            const content = document
+              .getElementById("new-comment-content")
+              .value.trim();
+            if (!content) return alert("내용을 입력하세요.");
+
+            const res = await fetch(`/posts/${postId}/comments`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                [csrfHeader]: csrfToken,
+              },
+              body: JSON.stringify({ content }),
+              credentials: "same-origin",
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              const html = makeCommentHtml({
+                postId,
+                id: data.commentId,
+                author: data.author, // 닉네임
+                username: data.username, // 아이디(본인 여부 체크)
+                createdAt: data.createdAt,
+                content: data.content,
+                likeCount: data.likeCount,
+              });
+              document
+                .getElementById("comment-list")
+                .insertAdjacentHTML("beforeend", html);
+              document.getElementById("new-comment-content").value = "";
+            }
+          });
+
+        // -------- 이벤트 위임 (좋아요/수정/삭제/답글 토글·취소/대댓글 등록) --------
+        const list = document.getElementById("comment-list");
+        list.addEventListener("click", async (e) => {
+          const btn = e.target.closest("button");
+          if (!btn) return;
+
+          // 좋아요
+          if (btn.classList.contains("btn-like")) {
+            const postId = btn.dataset.postId;
+            const commentId = btn.dataset.commentId;
+            const liked = btn.classList.contains("liked");
+            const method = liked ? "DELETE" : "POST";
+
+            const res = await fetch(
+              `/posts/${postId}/comments/${commentId}/like`,
+              {
+                method,
+                headers: {
+                  [csrfHeader]: csrfToken,
+                  "X-Requested-With": "XMLHttpRequest",
+                },
+                credentials: "same-origin",
+              }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              btn.querySelector(".comment-like-count").textContent = data.count;
+              btn.classList.toggle("liked", data.liked);
+            }
+            return;
+          }
+
+          // 삭제
+          if (btn.classList.contains("btn-delete")) {
+            if (!confirm("정말 삭제하시겠습니까?")) return;
+            const postId = btn.dataset.postId;
+            const commentId = btn.dataset.commentId;
+
+            const res = await fetch(`/posts/${postId}/comments/${commentId}`, {
+              method: "DELETE",
+              headers: {
+                [csrfHeader]: csrfToken,
+                "X-Requested-With": "XMLHttpRequest",
+              },
+              credentials: "same-origin",
+            });
+            if (res.ok) {
+              list.querySelector(`[data-comment-id='${commentId}']`)?.remove();
+            } else if (res.status === 403) {
+              alert("본인만 댓글을 삭제할 수 있습니다.");
+            } else {
+              alert("댓글 삭제 중 오류 발생");
+            }
+            return;
+          }
+
+          // 수정 폼 열기
+          if (btn.classList.contains("btn-edit")) {
+            const id = btn.dataset.commentId;
+            const body = document.getElementById(`comment-content-${id}`);
+            const form = document.getElementById(`comment-edit-form-${id}`);
+            const input = document.getElementById(`comment-edit-input-${id}`);
+            body.style.display = "none";
+            form.style.display = "block";
+            input.value = body.textContent.trim();
+            return;
+          }
+
+          // 수정 저장
+          if (btn.classList.contains("btn-save-edit")) {
+            const postId = btn.dataset.postId;
+            const id = btn.dataset.commentId;
+            const input = document.getElementById(`comment-edit-input-${id}`);
+            const newContent = input.value.trim();
+            if (!newContent) return alert("내용을 입력하세요.");
+
+            const res = await fetch(`/posts/${postId}/comments/${id}`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                [csrfHeader]: csrfToken,
+              },
+              body: JSON.stringify({ content: newContent }),
+              credentials: "same-origin",
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const body = document.getElementById(`comment-content-${id}`);
+              const form = document.getElementById(`comment-edit-form-${id}`);
+              body.textContent = data.content;
+              body.style.display = "block";
+              form.style.display = "none";
+            } else if (res.status === 403) {
+              alert("본인만 댓글을 수정할 수 있습니다.");
+            } else {
+              alert("댓글 수정 중 오류 발생");
+            }
+            return;
+          }
+
+          // 수정 취소
+          if (btn.classList.contains("btn-cancel-edit")) {
+            const id = btn.dataset.commentId;
+            const body = document.getElementById(`comment-content-${id}`);
+            const form = document.getElementById(`comment-edit-form-${id}`);
+            body.style.display = "block";
+            form.style.display = "none";
+            return;
+          }
+
+          // 답글 폼 열기
+          if (btn.classList.contains("btn-reply-toggle")) {
+            const targetId = btn.getAttribute("data-target");
+            document.getElementById(targetId).style.display = "block";
+            return;
+          }
+
+          // 답글 폼 닫기
+          if (btn.classList.contains("btn-cancel")) {
+            const targetId = btn.getAttribute("data-target");
+            document.getElementById(targetId).style.display = "none";
+            return;
+          }
+
+          // 대댓글 등록
+          if (btn.classList.contains("btn-reply-submit")) {
+            const postId = btn.dataset.postId;
+            const parentId = btn.dataset.parentId;
+            const box = btn.closest(".reply-form-box");
+            const content = box.querySelector(".reply-content").value.trim();
+            if (!content) return alert("내용을 입력하세요.");
+
+            const res = await fetch(`/posts/${postId}/comments`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                [csrfHeader]: csrfToken,
+              },
+              body: JSON.stringify({ content, parentId }),
+              credentials: "same-origin",
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const html = makeReplyHtml({
+                postId,
+                id: data.commentId,
+                author: data.author,
+                username: data.username,
+                createdAt: data.createdAt,
+                content: data.content,
+                likeCount: data.likeCount,
+              });
+              // 댓글 아이템을 찾고, 그 안의 대댓글 폼 바로 앞에 대댓글을 추가
+              const commentItem = list.querySelector(
+                `[data-comment-id='${parentId}']`
+              );
+              const replyForm = commentItem.querySelector(
+                `#reply-form-${parentId}`
+              );
+              replyForm.insertAdjacentHTML("beforebegin", html);
+              box.querySelector(".reply-content").value = "";
+              box.style.display = "none";
+            }
+            return;
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

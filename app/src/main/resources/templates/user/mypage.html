@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title>마이페이지</title>
+  <link rel="stylesheet" th:href="@{/css/board.css}" />
+</head>
+<body>
+<div th:replace="~{layout/header :: header}"></div>
+
+<div class="board-container">
+  <header class="board-header">
+    <h2 class="board-title">
+      <i class="fas fa-user-circle"></i> 마이페이지
+    </h2>
+    <p class="board-subtitle">내 활동과 알림을 한 곳에서 확인하세요.</p>
+  </header>
+
+  <!-- 내 알림 내역 (위로 이동) -->
+  <div class="card">
+    <div class="card-header"><i class="fas fa-bell"></i> 내 알림 내역</div>
+    <div class="list-group list-group-flush" id="notificationList">
+      <div
+              class="empty-state"
+              id="empty-notifications"
+              style="display: none"
+      >
+        <i class="fas fa-bell-slash"></i>
+        <p>아직 알림이 없습니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 내 활동 타임라인 -->
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-history"></i> 내 활동 타임라인
+    </div>
+    <div class="list-group list-group-flush">
+      <div class="list-group-item" th:each="item : ${timeline}">
+        <div class="timeline-item">
+          <div
+                  class="timeline-time"
+                  th:text="${#temporals.format(item.createdAt, 'MM-dd HH:mm')}"
+          ></div>
+          <div class="timeline-content">
+                <span th:switch="${item.type}">
+                  <span th:case="'POST'" class="timeline-badge bg-primary"
+                  >게시글 작성</span
+                  >
+                  <span th:case="'COMMENT'" class="timeline-badge bg-success"
+                  >댓글 작성</span
+                  >
+                  <span th:case="'LIKE'" class="timeline-badge bg-warning"
+                  >좋아요</span
+                  >
+                </span>
+
+            <!-- POST -->
+            <span
+                    th:if="${item.type == 'POST'}"
+                    th:text="'내가 쓴 글: ' + ${item.content}"
+            ></span>
+
+            <!-- COMMENT -->
+            <span
+                    th:if="${item.type == 'COMMENT'}"
+                    th:text="${item.targetAuthor == currentUserNickname} ?
+                                '내 글 [' + ${item.targetTitle} + ']에 댓글: ' + ${item.content} :
+                                '[' + ${item.targetAuthor} + '님의 글: ' + ${item.targetTitle} + ']에 댓글: ' + ${item.content}"
+            ></span>
+
+            <!-- LIKE -->
+            <span
+                    th:if="${item.type == 'LIKE'}"
+                    th:text="${item.targetAuthor == currentUserNickname} ?
+                                '내 글 [' + ${item.targetTitle} + ']에 좋아요' :
+                                '[' + ${item.targetAuthor} + '님의 글: ' + ${item.targetTitle} + ']에 좋아요'"
+            ></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function loadNotifications() {
+    fetch("/api/notifications")
+            .then((res) => res.json())
+            .then((data) => {
+              const list = document.getElementById("notificationList");
+              const emptyState = document.getElementById("empty-notifications");
+
+              if (data.length === 0) {
+                emptyState.style.display = "block";
+                return;
+              }
+
+              emptyState.style.display = "none";
+              list.innerHTML = "";
+
+              data.forEach((n) => {
+                const notificationDiv = document.createElement("div");
+                notificationDiv.className = "list-group-item";
+
+                if (!n.read) {
+                  notificationDiv.classList.add("notification-unread");
+                }
+
+                const createdAt = new Date(n.createdAt).toLocaleString("ko-KR", {
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+
+                let content = n.message;
+                if (n.postId) {
+                  content = `<a href="/posts/${n.postId}">${n.message}</a>`;
+                }
+
+                notificationDiv.innerHTML = `
+                <div class="notification-item">
+                  <div class="notification-time">${createdAt}</div>
+                  <div class="notification-content">${content}</div>
+                </div>
+              `;
+
+                list.appendChild(notificationDiv);
+              });
+            })
+            .catch((err) => console.error("알림 불러오기 실패:", err));
+  }
+
+  window.addEventListener("DOMContentLoaded", () => {
+    loadNotifications();
+    fetch("/api/notifications/read-all", { method: "GET" });
+    document.getElementById("notifCount").innerText = "0";
+  });
+</script>
+</body>
+</html>

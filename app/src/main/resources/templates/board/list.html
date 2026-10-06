@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html
+  xmlns:th="http://www.thymeleaf.org"
+  xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>게시판</title>
+    <link rel="stylesheet" th:href="@{/css/board.css}" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div th:replace="~{layout/header :: header}"></div>
+    <div class="board-container">
+      <!-- 헤더 -->
+      <header class="board-header">
+        <div class="header-decoration">
+          <div class="floating-icon icon-1">📚</div>
+          <div class="floating-icon icon-2">💡</div>
+          <div class="floating-icon icon-3">🚀</div>
+          <div class="floating-icon icon-4">⭐</div>
+        </div>
+        <h2 class="board-title">
+          <i class="fas fa-graduation-cap"></i>
+          <span class="title-text">게시판</span>
+          <div class="title-underline"></div>
+        </h2>
+        <p class="board-subtitle">
+          자유롭게 글을 쓰고 댓글과 좋아요로 이야기를 나누는 게시판입니다.
+        </p>
+      </header>
+
+      <!-- 상단 툴바 -->
+      <div class="board-toolbar">
+        <form method="get" class="search-form">
+          <div class="search-input-group">
+            <i class="fas fa-search search-icon"></i>
+            <input
+              type="text"
+              name="q"
+              placeholder="검색어를 입력하세요..."
+              th:value="${q}"
+            />
+          </div>
+          <select name="sort" class="sort-select">
+            <option value="createdAt" th:selected="${sort == 'createdAt'}">
+              📅 최신순
+            </option>
+            <option value="viewCount" th:selected="${sort == 'viewCount'}">
+              👁 조회순
+            </option>
+          </select>
+          <select name="dir" class="dir-select">
+            <option value="asc" th:selected="${dir == 'asc'}">
+              ⬆ 오름차순
+            </option>
+            <option value="desc" th:selected="${dir == 'desc'}">
+              ⬇ 내림차순
+            </option>
+          </select>
+          <select name="size" class="size-select">
+            <option value="10" th:selected="${size == 10}">10개씩</option>
+            <option value="20" th:selected="${size == 20}">20개씩</option>
+            <option value="50" th:selected="${size == 50}">50개씩</option>
+          </select>
+          <button type="submit" class="btn-search">
+            <i class="fas fa-search"></i> 검색
+          </button>
+        </form>
+
+        <div class="auth-buttons">
+          <a
+            href="/posts/new"
+            class="btn-write"
+            sec:authorize="isAuthenticated()"
+          >
+            <i class="fas fa-pen"></i> 글쓰기
+          </a>
+          <form
+            th:action="@{/logout}"
+            method="post"
+            sec:authorize="isAuthenticated()"
+            style="display: inline"
+          >
+            <button type="submit" class="btn-logout">
+              <i class="fas fa-sign-out-alt"></i> 로그아웃
+            </button>
+          </form>
+          <a href="/login" class="btn-login" sec:authorize="isAnonymous()">
+            <i class="fas fa-sign-in-alt"></i> 로그인
+          </a>
+        </div>
+      </div>
+
+      <!-- 게시글 목록 -->
+      <ul class="post-list">
+        <li th:each="post : ${posts.content}" class="post-item">
+          <div class="post-number">
+            <span th:text="${post.postId}">1</span>
+          </div>
+          <div class="post-content-wrapper">
+            <div class="post-title-wrapper">
+              <a
+                th:href="@{/posts/{id}(id=${post.postId})}"
+                class="post-title"
+                th:text="${post.title}"
+              ></a>
+              <!-- 파일 첨부 아이콘 -->
+              <i
+                class="fas fa-paperclip"
+                th:if="${post.hasFiles}"
+                style="margin-left: 5px"
+              ></i>
+            </div>
+            <div class="post-meta">
+              <span class="author">
+                <span th:text="${post.author}">작성자</span>
+              </span>
+              <span class="date">
+                <i class="fas fa-clock"></i>
+                <span
+                  th:text="${#temporals.format(post.createdAt, 'yyyy-MM-dd HH:mm:ss')}"
+                  >날짜</span
+                >
+              </span>
+              <span class="views">
+                <i class="fas fa-eye"></i>
+                <span th:text="${post.viewCount}">0</span>
+              </span>
+              <span class="likes">
+                <i class="fas fa-heart"></i>
+                <span th:text="${post.likeCount}"></span>
+              </span>
+            </div>
+          </div>
+        </li>
+      </ul>
+
+      <!-- 페이징 -->
+      <div class="pagination">
+        <a
+          th:if="${posts.hasPrevious()}"
+          th:href="@{/posts(page=${posts.number - 1}, size=${posts.size}, sort=${sort}, dir=${dir}, q=${q})}"
+        >
+          <i class="fas fa-chevron-left"></i> 이전
+        </a>
+        <span class="page-info">
+          <span th:text="${posts.number + 1}">1</span> /
+          <span th:text="${posts.totalPages}">1</span>
+        </span>
+        <a
+          th:if="${posts.hasNext()}"
+          th:href="@{/posts(page=${posts.number + 1}, size=${posts.size}, sort=${sort}, dir=${dir}, q=${q})}"
+        >
+          다음 <i class="fas fa-chevron-right"></i>
+        </a>
+      </div>
+    </div>
+  </body>
+</html>
