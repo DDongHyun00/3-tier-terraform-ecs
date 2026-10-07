@@ -93,7 +93,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     M[CloudWatch 지표<br/>ALB · ECS · RDS] --> AL[CloudWatch 알람]
-    AL --> SNS[SNS 토픽<br/>3tier-dev-alarms]
+    AL --> SNS[SNS 토픽<br/>3tier-prod-alarms]
     SNS --> Q[Amazon Q Developer<br/>in chat applications]
     Q --> SL[Slack ddonghyun-ops<br/>#aws-alerts]
     B[AWS Budgets] -->|월 예산 80% · 100%| MAIL[이메일]
@@ -105,13 +105,13 @@ flowchart LR
 
 | 이름 | CIDR | AZ | 용도 | 퍼블릭 IP 자동 할당 |
 |---|---|---|---|---|
-| `3tier-dev-vpc` | 10.0.0.0/16 | | VPC | |
-| `3tier-dev-public-a` | 10.0.0.0/24 | ap-northeast-2a | ALB, NAT | 예 |
-| `3tier-dev-public-c` | 10.0.1.0/24 | ap-northeast-2c | ALB, NAT | 예 |
-| `3tier-dev-private-a` | 10.0.10.0/24 | ap-northeast-2a | ECS 태스크 | 아니오 |
-| `3tier-dev-private-c` | 10.0.11.0/24 | ap-northeast-2c | ECS 태스크 | 아니오 |
-| `3tier-dev-db-a` | 10.0.20.0/24 | ap-northeast-2a | RDS | 아니오 |
-| `3tier-dev-db-c` | 10.0.21.0/24 | ap-northeast-2c | RDS (서브넷 그룹용) | 아니오 |
+| `3tier-prod-vpc` | 10.0.0.0/16 | | VPC | |
+| `3tier-prod-public-a` | 10.0.0.0/24 | ap-northeast-2a | ALB, NAT | 예 |
+| `3tier-prod-public-c` | 10.0.1.0/24 | ap-northeast-2c | ALB, NAT | 예 |
+| `3tier-prod-private-a` | 10.0.10.0/24 | ap-northeast-2a | ECS 태스크 | 아니오 |
+| `3tier-prod-private-c` | 10.0.11.0/24 | ap-northeast-2c | ECS 태스크 | 아니오 |
+| `3tier-prod-db-a` | 10.0.20.0/24 | ap-northeast-2a | RDS | 아니오 |
+| `3tier-prod-db-c` | 10.0.21.0/24 | ap-northeast-2c | RDS (서브넷 그룹용) | 아니오 |
 
 설계 이유:
 
@@ -123,10 +123,10 @@ flowchart LR
 
 | 라우트 테이블 | 연결 서브넷 | 0.0.0.0/0 → | 비고 |
 |---|---|---|---|
-| `3tier-dev-rt-public` | public-a, public-c | 인터넷 게이트웨이 | |
-| `3tier-dev-rt-private-a` | private-a | NAT Gateway (2a) | AZ별 NAT. 2c 장애 시 2a 태스크는 영향 없음 |
-| `3tier-dev-rt-private-c` | private-c | NAT Gateway (2c) | |
-| `3tier-dev-rt-db` | db-a, db-c | 없음 | 외부로 나가는 경로 자체가 없음 |
+| `3tier-prod-rt-public` | public-a, public-c | 인터넷 게이트웨이 | |
+| `3tier-prod-rt-private-a` | private-a | NAT Gateway (2a) | AZ별 NAT. 2c 장애 시 2a 태스크는 영향 없음 |
+| `3tier-prod-rt-private-c` | private-c | NAT Gateway (2c) | |
+| `3tier-prod-rt-db` | db-a, db-c | 없음 | 외부로 나가는 경로 자체가 없음 |
 
 - **NAT Gateway 2개**: 기획서의 "다중 AZ 가용성" 기준. 하나만 두면 그 AZ 장애 시 다른 AZ의 태스크도 ECR 풀과 Secrets 조회가 막혀 재배포가 불가능해집니다. 비용은 시간당 약 0.12달러로 전체의 40% 이상이며, 이 트레이드오프는 비용 리포트에 기록합니다.
 - 프라이빗 서브넷에서 NAT를 거쳐 나가는 트래픽은 ECR 이미지 풀, Secrets Manager, CloudWatch Logs, S3입니다. 인바운드는 ALB를 통해서만 들어옵니다.
@@ -137,9 +137,9 @@ flowchart LR
 
 | SG | 인바운드 | 아웃바운드 |
 |---|---|---|
-| `3tier-dev-sg-alb` | 443 ← 0.0.0.0/0, 80 ← 0.0.0.0/0 | 8080 → sg-app |
-| `3tier-dev-sg-app` | 8080 ← sg-alb | 5432 → sg-db, 443 → 0.0.0.0/0 |
-| `3tier-dev-sg-db` | 5432 ← sg-app | 없음 |
+| `3tier-prod-sg-alb` | 443 ← 0.0.0.0/0, 80 ← 0.0.0.0/0 | 8080 → sg-app |
+| `3tier-prod-sg-app` | 8080 ← sg-alb | 5432 → sg-db, 443 → 0.0.0.0/0 |
+| `3tier-prod-sg-db` | 5432 ← sg-app | 없음 |
 
 - 소스를 CIDR이 아니라 **SG 참조**로 적습니다. 태스크 IP는 재배포마다 바뀌지만 SG는 바뀌지 않습니다.
 - app의 아웃바운드 443은 NAT를 통한 AWS API 호출(ECR, Secrets Manager, CloudWatch, S3)용입니다. AWS API는 모두 443이므로 포트를 이것으로 좁힙니다.
@@ -152,12 +152,12 @@ flowchart LR
 
 | 항목 | 값 | 이유 |
 |---|---|---|
-| 클러스터 | `3tier-dev-cluster` | Container Insights 켬 |
+| 클러스터 | `3tier-prod-cluster` | Container Insights 켬 |
 | 태스크 CPU / 메모리 | 0.25 vCPU / 0.5 GB | 게시판 부하에 충분. 로컬 측정 기동 11초. 모자라면 0.5 vCPU / 1 GB로 |
 | 원하는 태스크 수 | 2 | AZ마다 1개. 1개면 재배포·장애 시 다운타임 |
 | 오토스케일링 | 최소 2, 최대 4, 목표 CPU 60% | 20단계에서 부하 테스트로 검증 |
 | 배포 | 롤링, 최소 100% / 최대 200%, 서킷 브레이커 + 롤백 | 무중단 배포, 실패 시 자동 복구 |
-| 로그 | CloudWatch Logs `/ecs/3tier-dev-board`, 보존 7일 | 비용. 장애 기록은 문서로 남김 |
+| 로그 | CloudWatch Logs `/ecs/3tier-prod-board`, 보존 7일 | 비용. 장애 기록은 문서로 남김 |
 | 헬스체크 | ALB: `/actuator/health/liveness`, 15초 간격, 정상 2회 / 비정상 2회 | DB와 무관한 경로 |
 | stopTimeout | 30초 | 앱의 graceful 유예 20초보다 길게 |
 
@@ -175,7 +175,7 @@ flowchart LR
 
 | 항목 | 값 | 이유 |
 |---|---|---|
-| 식별자 | `3tier-dev-db` | |
+| 식별자 | `3tier-prod-db` | |
 | 엔진 | PostgreSQL 16.15 (서울 리전 최신 16.x, 2026-10-07 확인) | 앱 8단계에서 16으로 확정. 마이너는 Terraform에서 `auto_minor_version_upgrade`로 자동 반영 |
 | 클래스 | db.t4g.micro | 비용. ARM(Graviton)이 같은 급 x86보다 쌈 |
 | 스토리지 | gp3 20 GB | 최소 크기 |
@@ -183,7 +183,7 @@ flowchart LR
 | 퍼블릭 접근 | 불가 | DB 서브넷 + sg-db |
 | 백업 보존 | 1일 | 반복 destroy 전제. 운영이면 7일 이상 |
 | 삭제 보호 | 끔 | 반복 destroy 전제 |
-| 비밀번호 | Terraform `random_password` → Secrets Manager `3tier-dev-db-credentials` | 코드에 평문 없음. state 파일에는 남으므로 state 버킷 접근 제한이 곧 비밀번호 보호 |
+| 비밀번호 | Terraform `random_password` → Secrets Manager `3tier-prod-db-credentials` | 코드에 평문 없음. state 파일에는 남으므로 state 버킷 접근 제한이 곧 비밀번호 보호 |
 
 ### 6.3 S3와 CloudFront
 
@@ -244,7 +244,7 @@ terraform/
 
 | 대상 | 규칙 | 예 |
 |---|---|---|
-| main 리소스 | `3tier-dev-<리소스>` | `3tier-dev-vpc`, `3tier-dev-alb`, `3tier-dev-cluster` |
+| main 리소스 | `3tier-prod-<리소스>` | `3tier-prod-vpc`, `3tier-prod-alb`, `3tier-prod-cluster` |
 | bootstrap 리소스, IAM 역할 | `3tier-<리소스>` (환경 하나를 공유) | `3tier-github-deploy`, `3tier-ecs-task` |
 | S3 버킷 | `3tier-<용도>-<계정ID 뒤 4자리>` (전역 유일) | `3tier-tfstate-xxxx`, `3tier-assets-xxxx` |
 | ECR | `3tier/board` | |
@@ -254,7 +254,7 @@ terraform/
 | 키 | 값 |
 |---|---|
 | `Project` | `3-tier-terraform-ecs` |
-| `Env` | `dev` |
+| `Env` | `prod` |
 | `Owner` | `DDongHyun00` |
 
 태그는 22단계에서 Cost Explorer로 비용을 나누는 기준이고, 다음 FinOps 프로젝트의 입력 데이터입니다.
