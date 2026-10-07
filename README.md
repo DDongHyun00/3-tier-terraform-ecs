@@ -16,7 +16,8 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 
 ```
 .
-├── app/                  게시판 앱 (Spring Boot)
+├── app/                  게시판 앱 (Spring Boot, Dockerfile 포함)
+├── docker-compose.yml    로컬 확인용: 앱 + PostgreSQL
 ├── terraform/            (예정)
 │   ├── bootstrap/        최초 1회 생성 후 유지: state 버킷, OIDC Provider, Route 53, ECR
 │   └── main/             반복 생성·삭제: VPC, ALB, ECS, RDS, CloudWatch 등
@@ -28,7 +29,7 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 ## 진행 상태
 
 - [x] 게시판 앱 준비
-- [ ] 클라우드 대응 리팩토링 (PostgreSQL 전환, Flyway, DB 세션 저장, 헬스체크, S3 파일 저장)
+- [x] 클라우드 대응 리팩토링 (PostgreSQL 전환, Flyway, DB 세션 저장, 헬스체크, S3 파일 저장, 컨테이너 이미지)
 - [ ] Terraform 인프라 구축
 - [ ] CI/CD 파이프라인
 - [ ] 모니터링과 오토스케일링

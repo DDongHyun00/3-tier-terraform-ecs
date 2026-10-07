@@ -1,0 +1,36 @@
+# 로컬 확인용: 앱 이미지 + PostgreSQL 16
+#   docker compose up -d --build
+#   docker compose down -v   (DB 볼륨까지 삭제)
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: board
+      POSTGRES_USER: board
+      POSTGRES_PASSWORD: board
+    volumes:
+      - board-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U board -d board"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: ./app
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/board
+      DB_USERNAME: board
+      DB_PASSWORD: board
+      STORAGE_TYPE: local
+      UPLOAD_DIR: /tmp/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    # ECS stopTimeout(30초)과 같은 조건. 앱의 graceful 유예(20초)보다 길어야 한다
+    stop_grace_period: 30s
+
+volumes:
+  board-db-data:

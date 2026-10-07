@@ -1,0 +1,7 @@
+build/
+.gradle/
+uploads/
+images/
+README.md
+.gitignore
+.gitattributes
