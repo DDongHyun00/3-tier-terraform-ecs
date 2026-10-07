@@ -10,6 +10,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 @Entity
+@Table(name = "notifications")
 @Getter
 @NoArgsConstructor
 public class Notification extends BaseTimeEntity {
@@ -18,6 +19,7 @@ public class Notification extends BaseTimeEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id")
     private User targetUser;
 
     private String message;

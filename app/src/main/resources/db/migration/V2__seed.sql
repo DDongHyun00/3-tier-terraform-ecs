@@ -1,3 +1,5 @@
+-- 테스트 계정 5개 (비밀번호 모두 1111)와 샘플 게시글 99개. Flyway가 한 번만 실행한다.
+
 INSERT INTO users (username, password, nickname, role)
 VALUES ('user1', '$2a$10$9JvaR9KuHRzDjRcsDNbQc.bVo0t.oCwaW2PTq7YUGIawn7.95kQDC', '페브리즈', 'USER');
 

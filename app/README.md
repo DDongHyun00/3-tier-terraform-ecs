@@ -17,7 +17,7 @@ Spring Boot로 만든 게시판 서비스입니다. 회원가입과 로그인을
 
 - Java 17, Spring Boot 4.1
 - Spring Data JPA, Spring Security, Thymeleaf
-- PostgreSQL 16
+- PostgreSQL 16, Flyway (스키마와 초기 데이터는 `src/main/resources/db/migration`)
 - Gradle
 
 ## 실행
@@ -84,7 +84,8 @@ DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않�
 
 ### 테이블 정의
 
-> 모든 엔티티는 `BaseTimeEntity`를 상속하며, 공통으로 `created_at`, `updated_at` 컬럼을 포함합니다.
+> 스키마는 Flyway 마이그레이션(`V1__init.sql`)으로 관리하며, 아래 표는 그 기준입니다.
+> User, Posts, Comment, PostLike, Notification은 `BaseTimeEntity`를 상속해 `created_at`, `updated_at` 컬럼을 포함합니다.
 > 
 #### User (회원)
 | 컬럼명 | 타입 | 제약조건 | 설명 |
@@ -137,7 +138,7 @@ DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않�
 | post_id | BIGINT | FK(Posts.post_id), NOT NULL | 관련 게시글 |
 | user_id | BIGINT | FK(User.user_id), NOT NULL | 알림 수신자 |
 | message | VARCHAR(255) | NOT NULL | 알림 내용 |
-| isRead | BOOLEAN | DEFAULT FALSE | 읽음 여부 |
+| read | BOOLEAN | NOT NULL | 읽음 여부 |
 
 
 #### FileEntity (파일 첨부)
