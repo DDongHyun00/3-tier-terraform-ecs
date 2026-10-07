@@ -27,9 +27,6 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/h2-console/**"))
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
-
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                         .invalidSessionUrl("/posts")  // 세션 만료 시 이동
@@ -44,8 +41,7 @@ public class SecurityConfig {
 
                         // 전체 공개
                         .requestMatchers("/", "/login", "/signup",
-                                "/css/**", "/js/**", "/images/**",
-                                "/h2-console/**").permitAll()
+                                "/css/**", "/js/**", "/images/**").permitAll()
 
                         // 게시글 목록/검색/상세는 공개
                         .requestMatchers(HttpMethod.GET, "/posts", "/posts/*").permitAll()
