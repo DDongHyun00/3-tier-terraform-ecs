@@ -7,6 +7,7 @@ import com.example.board.board.entity.Post;
 import com.example.board.board.repository.PostRepository;
 import com.example.board.file.entity.FileEntity;
 import com.example.board.file.repository.FileRepository;
+import com.example.board.file.storage.FileStorage;
 import com.example.board.like.repository.PostLikeRepository;
 import com.example.board.user.entity.User;
 import com.example.board.user.repository.UserRepository;
@@ -18,11 +19,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +29,7 @@ public class PostService {
     private final UserRepository userRepository;
     private final PostLikeRepository postLikeRepository;
     private final FileRepository fileRepository;
+    private final FileStorage fileStorage;
 
     @Transactional(readOnly = true)
     public Page<PostResponseDto> getPostList(String keyword, Pageable pageable) {
@@ -114,10 +112,7 @@ public class PostService {
         for (MultipartFile file : files) {
             if (!file.isEmpty()) {
                 try {
-                    String savedName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-                    Path savePath = Paths.get("uploads", savedName);
-                    Files.createDirectories(savePath.getParent());
-                    file.transferTo(savePath);
+                    String savedName = fileStorage.store(file);
 
                     FileEntity fe = FileEntity.builder()
                             .post(post)

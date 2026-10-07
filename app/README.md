@@ -38,6 +38,9 @@ DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않�
 | `DB_URL` | `jdbc:postgresql://localhost:5432/board` |
 | `DB_USERNAME` | `board` |
 | `DB_PASSWORD` | `board` |
+| `STORAGE_TYPE` | `local` (첨부파일을 디스크에 저장. 운영은 `s3`) |
+| `UPLOAD_DIR` | `uploads` (`local`일 때 저장 폴더) |
+| `S3_BUCKET` | 없음 (`s3`일 때 필수. 자격 증명은 ECS 태스크 역할, 리전은 `AWS_REGION`) |
 
 테스트(`./gradlew build`)는 Testcontainers로 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다.
 

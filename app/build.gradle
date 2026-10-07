@@ -37,6 +37,8 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation platform('software.amazon.awssdk:bom:2.46.7')
+	implementation 'software.amazon.awssdk:s3'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
