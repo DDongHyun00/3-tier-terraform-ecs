@@ -7,3 +7,7 @@
 *.tfstate.*
 *.tfvars
 crash.log
+
+# IDE
+.idea/
+*.iml
