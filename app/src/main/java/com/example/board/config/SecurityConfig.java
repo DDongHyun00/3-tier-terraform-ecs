@@ -11,6 +11,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
+import org.springframework.session.security.SpringSessionBackedSessionRegistry;
 
 @Configuration
 @EnableWebSecurity
@@ -18,6 +22,7 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     private final CustomUserDetailsService customUserDetailsService;
+    private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -29,6 +34,7 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                         .invalidSessionUrl("/posts")  // 세션 만료 시 이동
                         .maximumSessions(1)                   // 동시에 1개의 세션만 허용
+                        .sessionRegistry(sessionRegistry())   // 세션이 DB에 있으므로 레지스트리도 DB 기반으로 (태스크 간 공유)
                         .expiredUrl("/posts")         // 다른 로그인 발생 시 기존 세션 만료
                 )
 
@@ -72,6 +78,11 @@ public class SecurityConfig {
 
 
         return http.build();
+    }
+
+    @Bean
+    public SessionRegistry sessionRegistry() {
+        return new SpringSessionBackedSessionRegistry<>(sessionRepository);
     }
 
     @Bean

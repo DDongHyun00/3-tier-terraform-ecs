@@ -16,7 +16,7 @@ Spring Boot로 만든 게시판 서비스입니다. 회원가입과 로그인을
 ## 기술 스택
 
 - Java 17, Spring Boot 4.1
-- Spring Data JPA, Spring Security, Thymeleaf
+- Spring Data JPA, Spring Security, Spring Session JDBC (세션을 DB에 저장), Thymeleaf
 - PostgreSQL 16, Flyway (스키마와 초기 데이터는 `src/main/resources/db/migration`)
 - Gradle
 
