@@ -11,3 +11,6 @@ crash.log
 # IDE
 .idea/
 *.iml
+
+# 기획 문서 (로컬 보관)
+*.pdf
