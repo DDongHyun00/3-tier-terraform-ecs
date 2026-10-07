@@ -17,16 +17,29 @@ Spring Boot로 만든 게시판 서비스입니다. 회원가입과 로그인을
 
 - Java 17, Spring Boot 4.1
 - Spring Data JPA, Spring Security, Thymeleaf
-- H2 (인메모리)
+- PostgreSQL 16
 - Gradle
 
 ## 실행
 
+로컬 PostgreSQL을 Docker로 띄운 뒤 앱을 실행합니다.
+
 ```bash
+docker run -d --name board-db -e POSTGRES_DB=board -e POSTGRES_USER=board -e POSTGRES_PASSWORD=board -p 5432:5432 postgres:16
 ./gradlew bootRun
 ```
 
 실행 후 `http://localhost:8080` 으로 접속합니다.
+
+DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않으면 위 Docker 설정 기준의 기본값을 씁니다.
+
+| 환경 변수 | 기본값 |
+|---|---|
+| `DB_URL` | `jdbc:postgresql://localhost:5432/board` |
+| `DB_USERNAME` | `board` |
+| `DB_PASSWORD` | `board` |
+
+테스트(`./gradlew build`)는 Testcontainers로 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다.
 
 ## 테스트 계정
 

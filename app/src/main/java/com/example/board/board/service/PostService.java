@@ -35,8 +35,9 @@ public class PostService {
 
     @Transactional(readOnly = true)
     public Page<PostResponseDto> getPostList(String keyword, Pageable pageable) {
-        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
-        Page<Post> posts = postRepository.searchAll(kw, pageable);
+        Page<Post> posts = (keyword == null || keyword.isBlank())
+                ? postRepository.findAllWithUser(pageable)
+                : postRepository.search(keyword.trim(), pageable);
 
         return posts.map(post -> PostResponseDto.builder()
                 .postId(post.getPostId())
