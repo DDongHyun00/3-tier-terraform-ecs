@@ -41,6 +41,8 @@ DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않�
 
 테스트(`./gradlew build`)는 Testcontainers로 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다.
 
+헬스체크는 `/actuator/health`(DB 포함)와 `/actuator/health/liveness`(앱 프로세스만)를 로그인 없이 제공합니다. 그 외 Actuator 엔드포인트는 노출하지 않습니다.
+
 ## 테스트 계정
 
 | 아이디 | 비밀번호 | 닉네임 | 권한 |

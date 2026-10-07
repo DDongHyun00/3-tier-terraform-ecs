@@ -39,6 +39,9 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+                        // 헬스체크 (비로그인, 302 없이 200이어야 함). ALB는 DB 상태와 무관한 /actuator/health/liveness를 본다
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+
                         // 전체 공개
                         .requestMatchers("/", "/login", "/signup",
                                 "/css/**", "/js/**", "/images/**",
