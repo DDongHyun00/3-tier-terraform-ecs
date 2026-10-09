@@ -26,6 +26,12 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 
 앱 설명은 [app/README.md](app/README.md)에 있습니다.
 
+## 문서
+
+- [아키텍처 설계](docs/architecture.md): CIDR·서브넷·SG·IAM·태그 규칙, 다이어그램
+- [프로젝트 히스토리 (Notion)](https://app.notion.com/p/3f4330bd3846812395f4d19208283e9c): 에픽별 서사, 결정 기록(ADR), 트러블슈팅
+- 작업 추적: [Issues](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues) · [Milestones](https://github.com/DDongHyun00/3-tier-terraform-ecs/milestones) · [Project 보드](https://github.com/users/DDongHyun00/projects/11)
+
 ## 진행 상태
 
 - [x] 게시판 앱 준비
