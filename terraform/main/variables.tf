@@ -24,3 +24,8 @@ variable "multi_az" {
   type        = bool
   default     = false
 }
+
+variable "account_suffix" {
+  description = "AWS 계정 ID 뒤 4자리. S3 버킷 이름 접미사 (tfvars)"
+  type        = string
+}

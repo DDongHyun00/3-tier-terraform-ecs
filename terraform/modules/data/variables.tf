@@ -56,3 +56,8 @@ variable "backup_retention_days" {
   type        = number
   default     = 1
 }
+
+variable "account_suffix" {
+  description = "AWS 계정 ID 뒤 4자리. S3 버킷 이름을 전역에서 유일하게 만드는 접미사"
+  type        = string
+}

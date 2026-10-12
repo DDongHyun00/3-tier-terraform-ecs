@@ -19,4 +19,5 @@ module "data" {
   db_subnet_ids        = module.network.db_subnet_ids
   db_security_group_id = module.network.db_security_group_id
   multi_az             = var.multi_az
+  account_suffix       = var.account_suffix
 }
