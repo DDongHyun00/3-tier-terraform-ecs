@@ -18,3 +18,14 @@ variable "azs" {
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2c"]
 }
+
+variable "multi_az" {
+  description = "RDS Multi-AZ. 평소 false, 장애 재현 때만 true"
+  type        = bool
+  default     = false
+}
+
+variable "account_suffix" {
+  description = "AWS 계정 ID 뒤 4자리. S3 버킷 이름 접미사 (tfvars)"
+  type        = string
+}
