@@ -245,6 +245,7 @@ terraform/
 | 대상 | 규칙 | 예 |
 |---|---|---|
 | main 리소스 | `3tier-prod-<리소스>` | `3tier-prod-vpc`, `3tier-prod-alb`, `3tier-prod-cluster` |
+| 첫 글자가 영문이어야 하는 RDS 계열 이름 (식별자, 서브넷 그룹) | `db-3tier-prod-*`. 태그 Name은 규칙대로 | `db-3tier-prod`, `db-3tier-prod-subnets` |
 | bootstrap 리소스, IAM 역할 | `3tier-<리소스>` (환경 하나를 공유) | `3tier-github-deploy`, `3tier-ecs-task` |
 | S3 버킷 | `3tier-<용도>-<계정ID 뒤 4자리>` (전역 유일) | `3tier-tfstate-xxxx`, `3tier-assets-xxxx` |
 | ECR | `3tier/board` | |

@@ -18,3 +18,9 @@ variable "azs" {
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2c"]
 }
+
+variable "multi_az" {
+  description = "RDS Multi-AZ. 평소 false, 장애 재현 때만 true"
+  type        = bool
+  default     = false
+}

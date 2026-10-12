@@ -11,3 +11,12 @@ module "network" {
   azs         = var.azs
   # CIDR은 모듈 기본값(docs/architecture.md 5.1) 그대로 쓴다.
 }
+
+module "data" {
+  source = "../modules/data"
+
+  name_prefix          = local.name_prefix
+  db_subnet_ids        = module.network.db_subnet_ids
+  db_security_group_id = module.network.db_security_group_id
+  multi_az             = var.multi_az
+}
