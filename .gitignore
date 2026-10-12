@@ -14,3 +14,7 @@ crash.log
 
 # 기획 문서 (로컬 보관)
 *.pdf
+
+# 로컬 전용 (Claude 작업 규칙, 개인 보관함)
+CLAUDE.local.md
+local/
