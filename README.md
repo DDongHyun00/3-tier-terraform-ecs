@@ -36,7 +36,7 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 
 - [x] 게시판 앱 준비
 - [x] 클라우드 대응 리팩토링 (PostgreSQL 전환, Flyway, DB 세션 저장, 헬스체크, S3 파일 저장, 컨테이너 이미지)
-- [ ] Terraform 인프라 구축
+- [ ] Terraform 인프라 구축 (bootstrap, 네트워크·데이터 계층 완료 / 컴퓨트·HTTPS 진행 예정)
 - [ ] CI/CD 파이프라인
 - [ ] 모니터링과 오토스케일링
 - [ ] 장애 재현과 기록

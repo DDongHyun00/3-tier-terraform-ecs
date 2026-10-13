@@ -1,0 +1,7 @@
+# 텍스트 파일은 항상 LF로 저장한다. Windows에서 커밋해도 CI(Linux)와 줄바꿈이 같다.
+* text=auto eol=lf
+
+# 바이너리
+*.png binary
+*.jar binary
+*.pdf binary
