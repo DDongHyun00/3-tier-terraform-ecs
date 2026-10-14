@@ -1,0 +1,4 @@
+# terraform.tfvars로 복사해서 값을 채운다. terraform.tfvars는 gitignore 대상.
+account_suffix = "0000"                              # AWS 계정 ID 뒤 4자리. state 버킷 이름 접미사
+github_repo    = "DDongHyun00/3-tier-terraform-ecs" # OIDC 배포 역할을 수임할 수 있는 레포
+domain_name    = "3tier.link"                        # Route 53 호스팅 존

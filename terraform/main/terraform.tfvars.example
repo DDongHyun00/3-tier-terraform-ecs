@@ -1,0 +1,4 @@
+# terraform.tfvars로 복사해서 값을 채운다. terraform.tfvars는 gitignore 대상.
+env            = "prod"
+region         = "ap-northeast-2"
+account_suffix = "0000" # AWS 계정 ID 뒤 4자리. S3 버킷 이름 접미사
