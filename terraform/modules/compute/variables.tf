@@ -48,15 +48,21 @@ variable "app_port" {
 }
 
 variable "task_cpu" {
-  description = "태스크 CPU 단위. 256 = 0.25 vCPU"
+  description = "태스크 CPU 단위. 512 = 0.5 vCPU. 256(0.25)은 기동 120초, 첫 응답 수 초라 올렸다 (DEC, E05)"
   type        = number
-  default     = 256
+  default     = 512
 }
 
 variable "task_memory" {
-  description = "태스크 메모리 MB. 0.25 vCPU에 허용되는 값은 512·1024·2048"
+  description = "태스크 메모리 MB. 0.5 vCPU에 허용되는 값은 1024~4096"
   type        = number
-  default     = 512
+  default     = 1024
+}
+
+variable "java_tool_options" {
+  description = "JVM 옵션. 컨테이너 ENV를 덮어쓴다. TieredStopAtLevel=1은 기동·첫 요청을 빠르게 한다(최고 처리량은 조금 손해)"
+  type        = string
+  default     = "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"
 }
 
 variable "desired_count" {

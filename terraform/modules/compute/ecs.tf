@@ -51,6 +51,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "STORAGE_TYPE", value = "s3" },
         { name = "S3_BUCKET", value = var.assets_bucket_name },
         { name = "AWS_REGION", value = var.region },
+        { name = "JAVA_TOOL_OPTIONS", value = var.java_tool_options },
       ]
 
       # 실행 역할이 시크릿의 JSON에서 키 하나씩 꺼내 환경 변수로 넣는다. 형식: <시크릿 ARN>:<키>::
