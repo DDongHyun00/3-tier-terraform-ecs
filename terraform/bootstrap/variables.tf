@@ -12,3 +12,15 @@ variable "domain_name" {
   description = "Route 53 호스팅 존 이름"
   type        = string
 }
+
+variable "github_owner_id" {
+  description = "GitHub 계정의 숫자 ID. OIDC sub 클레임의 불변 식별자. gh api users/<owner> --jq .id"
+  type        = number
+  default     = 117076978
+}
+
+variable "github_repo_id" {
+  description = "GitHub 레포의 숫자 ID. OIDC sub 클레임의 불변 식별자. gh api repos/<owner>/<name> --jq .id"
+  type        = number
+  default     = 1407473189
+}

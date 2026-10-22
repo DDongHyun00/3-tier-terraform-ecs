@@ -213,7 +213,7 @@ flowchart LR
 
 | 역할 | 누가 수임 | 권한 | 최소 권한 근거 |
 |---|---|---|---|
-| `3tier-github-deploy` | GitHub Actions (OIDC) | main 인프라 apply에 필요한 서비스(EC2, ECS, RDS, ELB, S3, IAM PassRole, CloudWatch, Secrets Manager, ACM, Route 53, CloudFront), ECR push, state 버킷 읽기·쓰기 | 신뢰 조건을 `repo:DDongHyun00/3-tier-terraform-ecs:ref:refs/heads/main`과 PR로 제한. 다른 레포·브랜치는 수임 불가 |
+| `3tier-github-deploy` | GitHub Actions (OIDC) | main 인프라 apply에 필요한 서비스(EC2, ECS, RDS, ELB, S3, IAM PassRole, CloudWatch, Secrets Manager, ACM, Route 53, CloudFront), ECR push, state 버킷 읽기·쓰기 | 신뢰 조건을 `repo:DDongHyun00@<owner_id>/3-tier-terraform-ecs@<repo_id>:ref:refs/heads/main`과 PR로 제한(2026-07 이후 레포는 sub에 불변 ID 포함). 다른 레포·브랜치는 수임 불가 |
 | `3tier-ecs-task-execution` | ECS 에이전트 | `AmazonECSTaskExecutionRolePolicy` + Secrets Manager 시크릿 1개 `GetSecretValue` | 이미지 풀, 로그 쓰기, 시크릿 주입에 필요한 것만 |
 | `3tier-ecs-task` | 앱 컨테이너 | S3 버킷 1개 `GetObject`, `PutObject` | 앱이 AWS에 하는 일은 첨부파일 읽기·쓰기뿐 |
 
