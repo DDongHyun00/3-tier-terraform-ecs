@@ -37,3 +37,23 @@ output "assets_bucket_name" {
 output "cloudfront_domain_name" {
   value = module.data.cloudfront_domain_name
 }
+
+output "site_url" {
+  value = module.compute.site_url
+}
+
+output "alb_dns_name" {
+  value = module.compute.alb_dns_name
+}
+
+output "ecs_cluster_name" {
+  value = module.compute.cluster_name
+}
+
+output "ecs_service_name" {
+  value = module.compute.service_name
+}
+
+output "log_group_name" {
+  value = module.compute.log_group_name
+}
