@@ -6,7 +6,6 @@ terraform {
     bucket       = "3tier-tfstate-1136"
     key          = "main/terraform.tfstate"
     region       = "ap-northeast-2"
-    profile      = "3tier"
     use_lockfile = true
   }
 

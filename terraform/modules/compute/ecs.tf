@@ -109,6 +109,13 @@ resource "aws_ecs_service" "app" {
     container_port   = var.app_port
   }
 
+  # 배포는 GitHub Actions가 태스크 정의 새 리비전을 등록하고 서비스를 갱신한다(E06, DEC).
+  # Terraform이 서비스의 task_definition을 자기 리비전으로 되돌리지 않도록 무시한다.
+  # Terraform으로 태스크 정의(CPU·메모리·환경 변수)를 바꾸면 다음 배포 때 그 리비전을 기반으로 반영된다.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   # 리스너가 타깃 그룹에 붙기 전에 서비스를 만들면 실패한다
   depends_on = [aws_lb_listener.https, aws_lb_listener.http]
 }
