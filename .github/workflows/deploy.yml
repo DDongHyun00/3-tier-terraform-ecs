@@ -1,0 +1,111 @@
+# 앱 배포 (#32). main에 app/** 변경이 머지되면 이미지를 빌드해 ECR에 올리고 ECS 서비스를 롤링 배포한다.
+# 자격 증명은 OIDC로 3tier-github-deploy 역할을 수임한다. 액세스 키 없음.
+# 태스크 정의는 현재 리비전을 내려받아 이미지만 바꿔 새 리비전으로 등록한다(GitHub 공식 가이드 방식).
+# Terraform은 서비스의 task_definition 변경을 무시하므로(ignore_changes) 이 배포를 되돌리지 않는다.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+  workflow_dispatch: # 수동 실행(재배포, 측정, 워크플로 수정 후 확인)
+
+permissions:
+  contents: read
+  id-token: write # OIDC 토큰 발급
+  actions: write  # 레포 변수 TF_VAR_IMAGE_TAG 갱신
+
+# 배포는 한 번에 하나만. 겹치면 뒤의 것이 기다린다
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: 3tier/board
+  ECS_CLUSTER: 3tier-prod-cluster
+  ECS_SERVICE: 3tier-prod-board
+  TASK_FAMILY: 3tier-prod-board
+  CONTAINER_NAME: board
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: start timer
+        run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: image tag = commit SHA 앞 7자리
+        run: echo "IMAGE=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # provenance=false: 증명 매니페스트 없이 이미지 하나만 올린다(ECR 스캔·콘솔이 깔끔). 캐시는 GitHub Actions 캐시
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          push: true
+          tags: ${{ env.IMAGE }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: push done
+        run: echo "T1=$(date +%s)" >> "$GITHUB_ENV"
+
+      # 현재 서비스가 쓰는 태스크 정의(최신 리비전)를 내려받는다. CPU·메모리·환경 변수는 그대로, 이미지만 바뀐다
+      - name: download current task definition
+        run: |
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > task-definition.json
+
+      - name: render new task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE }}
+
+      # 새 리비전 등록 → 서비스 갱신 → 롤링(100/200) 완료까지 대기. 서킷 브레이커가 롤백하면 여기서 실패한다
+      - name: deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      # Terraform이 처음부터 다시 만들 때 쓸 기준 이미지 태그를 맞춰 둔다(실패해도 배포는 성공)
+      - name: sync TF_VAR_IMAGE_TAG
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh variable set TF_VAR_IMAGE_TAG --body "${GITHUB_SHA::7}"
+
+      - name: summary (#36 측정)
+        if: always()
+        run: |
+          T2=$(date +%s)
+          {
+            echo "## deploy ${GITHUB_SHA::7}"
+            echo "| 구간 | 초 |"
+            echo "|---|---|"
+            echo "| 빌드·push | $((T1 - T0)) |"
+            echo "| ECS 롤링(안정화까지) | $((T2 - T1)) |"
+            echo "| 전체 | $((T2 - T0)) |"
+          } >> "$GITHUB_STEP_SUMMARY"

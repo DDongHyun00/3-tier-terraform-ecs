@@ -1,0 +1,77 @@
+# 인프라 apply (#33). terraform/** 변경이 main에 머지되면 apply한다. plan은 PR(ci.yml)에서 이미 봤다.
+# 수동 실행으로 apply·destroy도 할 수 있다. 세션 끝에 destroy를 잊지 않게 GitHub에서 버튼 하나로 내린다.
+name: terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/main/**"
+      - "terraform/modules/**"
+  workflow_dispatch: # 워크플로 수정만으로는 apply하지 않는다. 수동 실행으로 확인한다
+    inputs:
+      action:
+        description: "apply 또는 destroy"
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+permissions:
+  contents: read
+  id-token: write
+
+# state는 하나. apply/destroy가 겹치지 않게 직렬화한다
+concurrency:
+  group: terraform-main
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/main
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_account_suffix: ${{ vars.TF_VAR_ACCOUNT_SUFFIX }}
+      TF_VAR_image_tag: ${{ vars.TF_VAR_IMAGE_TAG }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: init
+        run: terraform init -input=false
+
+      - name: plan
+        run: |
+          set -o pipefail
+          if [ "${{ inputs.action }}" = "destroy" ]; then
+            terraform plan -destroy -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
+          else
+            terraform plan -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
+          fi
+
+      - name: apply
+        run: |
+          T0=$(date +%s)
+          terraform apply -input=false -no-color tfplan
+          echo "DURATION=$(( $(date +%s) - T0 ))" >> "$GITHUB_ENV"
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## terraform ${{ inputs.action || 'apply' }}"
+            grep -E '^(Plan:|No changes|Apply complete|Destroy complete)' plan.txt || true
+            echo ""
+            echo "소요: ${DURATION:-?}초"
+          } >> "$GITHUB_STEP_SUMMARY"
