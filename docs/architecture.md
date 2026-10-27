@@ -85,6 +85,7 @@ flowchart LR
 ```
 
 - 액세스 키 없음. GitHub Actions는 OIDC 토큰으로 IAM 역할을 수임하고, 역할의 신뢰 조건은 이 레포의 `main` 브랜치와 PR로 제한합니다.
+- `main`은 직접 push하지 않고 PR로만 바꿉니다. 브랜치 ruleset(`.github/rulesets/main.json`)으로 PR 필수, `app-test`·`terraform-plan` 상태 체크 필수, 강제 push·삭제 금지를 겁니다. 경로 필터로 건너뛴 잡은 성공으로 집계되므로 앱만 바뀐 PR도 막히지 않습니다. 적용 명령: `gh api repos/{owner}/{repo}/rulesets --method POST --input .github/rulesets/main.json`. PR 본문은 `.github/pull_request_template.md`(목표·변경·검증·Closes #) 틀을 따릅니다.
 - 롤링 배포는 최소 100%, 최대 200%입니다. 태스크 2개 기준으로 새 태스크 2개를 먼저 띄우고 헬스체크를 통과하면 이전 태스크를 내립니다. 배포 중에도 서비스 용량이 줄지 않습니다.
 - 새 태스크가 기동에 반복 실패하면 ECS 배포 서킷 브레이커가 이전 태스크 정의로 자동 롤백합니다.
 
