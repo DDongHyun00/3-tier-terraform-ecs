@@ -43,10 +43,12 @@ jobs:
           terraform_version: 1.16.5
           terraform_wrapper: false
 
+      # 계정 ID는 Secret으로 두어야 단계 머리 env 출력까지 가려진다(#59). vars나 env로 넘기면 마스크보다 먼저 로그에 찍힌다
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy
           aws-region: ap-northeast-2
+          mask-aws-account-id: true
 
       - name: init
         run: terraform init -input=false

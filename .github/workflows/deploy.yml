@@ -38,10 +38,13 @@ jobs:
       - name: start timer
         run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
+      # 계정 ID는 Secret으로 두어야 단계 머리 env 출력까지 가려진다(#59). vars나 env로 넘기면 마스크보다 먼저 로그에 찍힌다.
+      # ECR 레지스트리 주소와 태스크 정의 ARN에 든 계정 ID도 같은 Secret 값이라 함께 가려진다
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy
           aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
       - name: login to ECR
         id: ecr

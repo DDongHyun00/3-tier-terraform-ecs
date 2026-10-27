@@ -74,10 +74,12 @@ jobs:
         with:
           terraform_version: 1.16.5
           terraform_wrapper: false
+      # 계정 ID는 Secret으로 두어야 단계 머리 env 출력까지 가려진다(#59). vars나 env로 넘기면 마스크보다 먼저 로그에 찍힌다
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy
           aws-region: ap-northeast-2
+          mask-aws-account-id: true
       - name: fmt
         run: terraform fmt -check -recursive ..
       - name: init
@@ -99,6 +101,8 @@ jobs:
             let plan = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '(plan 출력 없음)';
             const max = 60000;
             if (plan.length > max) plan = '…(앞부분 생략)\n' + plan.slice(-max);
+            // 코멘트에는 add-mask가 닿지 않으므로 계정 ID 12자리를 직접 치환한다(#59)
+            plan = plan.replace(/\b\d{12}\b/g, '************');
             const ok = '${{ steps.plan.outcome }}' === 'success';
             const summary = (plan.match(/^(Plan: .*|No changes\..*)$/m) || [ok ? '' : 'plan 실패'])[0];
             const marker = '<!-- terraform-plan -->';
