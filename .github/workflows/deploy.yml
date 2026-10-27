@@ -28,6 +28,7 @@ env:
   ECS_SERVICE: 3tier-prod-board
   TASK_FAMILY: 3tier-prod-board
   CONTAINER_NAME: board
+  AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }} # 워크플로 env로 넘긴다. 단계 env는 로그 머리에 값이 찍힌다
 
 jobs:
   deploy:
@@ -38,16 +39,17 @@ jobs:
       - name: start timer
         run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
+      # 계정 ID 12자리를 로그에서 가린다(#59). 자격 증명 액션이 시작할 때 role-to-assume(ARN)을 먼저 찍으므로 그 앞에서 등록한다.
+      # ECR 레지스트리 주소와 태스크 정의 ARN에도 들어 있다
+      - name: mask account id
+        run: |
+          echo "::add-mask::$(echo "$AWS_DEPLOY_ROLE_ARN" | cut -d: -f5)"
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      # 계정 ID 12자리를 로그에서 가린다(#59). ECR 레지스트리 주소와 태스크 정의 ARN에 들어 있다
-      - name: mask account id
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          echo "::add-mask::$ACCOUNT_ID"
+          mask-aws-account-id: true
 
       - name: login to ECR
         id: ecr
