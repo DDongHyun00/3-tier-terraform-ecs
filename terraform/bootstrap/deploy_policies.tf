@@ -291,7 +291,7 @@ data "aws_iam_policy_document" "deploy_compute" {
   # 인증서 요청·목록은 리소스 수준 권한이 없어 *
   statement {
     sid       = "AcmRequest"
-    actions   = ["acm:RequestCertificate", "acm:ListCertificates", "acm:AddTagsToCertificate"]
+    actions   = ["acm:RequestCertificate", "acm:ListCertificates"]
     resources = ["*"]
   }
 
@@ -303,6 +303,7 @@ data "aws_iam_policy_document" "deploy_compute" {
       "acm:DescribeCertificate",
       "acm:GetCertificate",
       "acm:ListTagsForCertificate",
+      "acm:AddTagsToCertificate",
       "acm:RemoveTagsFromCertificate",
     ]
     resources = ["arn:aws:acm:${local.region}:${local.account}:certificate/*"]
@@ -515,10 +516,11 @@ data "aws_iam_policy_document" "deploy_data" {
     resources = ["arn:aws:s3:::3tier-assets-${var.account_suffix}/*"]
   }
 
-  # 캐시 정책 목록은 리소스 수준 권한이 없어 *
+  # 캐시 정책 조회(읽기 전용). s3.tf가 AWS 관리형 Managed-CachingOptimized를 이름으로 찾으므로
+  # 계정 소유 cache-policy/*로 좁히면 조회가 막힌다. 목록 조회는 리소스 수준 권한도 없어 *
   statement {
-    sid       = "CloudFrontList"
-    actions   = ["cloudfront:ListCachePolicies"]
+    sid       = "CloudFrontCachePolicyRead"
+    actions   = ["cloudfront:ListCachePolicies", "cloudfront:GetCachePolicy"]
     resources = ["*"]
   }
 
@@ -548,12 +550,6 @@ data "aws_iam_policy_document" "deploy_data" {
       "cloudfront:GetOriginAccessControlConfig",
     ]
     resources = ["arn:aws:cloudfront::${local.account}:origin-access-control/*"]
-  }
-
-  statement {
-    sid       = "CloudFrontCachePolicy"
-    actions   = ["cloudfront:GetCachePolicy"]
-    resources = ["arn:aws:cloudfront::${local.account}:cache-policy/*"]
   }
 }
 
