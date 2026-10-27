@@ -215,7 +215,7 @@ flowchart LR
 
 | 역할 | 누가 수임 | 권한 | 최소 권한 근거 |
 |---|---|---|---|
-| `3tier-github-deploy` | GitHub Actions (OIDC) | main 인프라 apply에 필요한 서비스(EC2, ECS, RDS, ELB, S3, IAM PassRole, CloudWatch, Secrets Manager, ACM, Route 53, CloudFront), ECR push, state 버킷 읽기·쓰기 | 신뢰 조건을 `repo:DDongHyun00@<owner_id>/3-tier-terraform-ecs@<repo_id>:ref:refs/heads/main`과 PR로 제한(2026-07 이후 레포는 sub에 불변 ID 포함). 다른 레포·브랜치는 수임 불가 |
+| `3tier-github-deploy` | GitHub Actions (OIDC) | 고객 관리형 정책 4개(`terraform/bootstrap/deploy_policies.tf`). **state-ecr**: state 버킷의 `main/` 객체 읽기·쓰기·삭제(잠금 파일 포함), ECR `3tier/board` push. **network**: EC2(VPC, 서브넷, IGW, EIP, NAT, 라우트, SG) 생성·삭제. **compute**: ECS, ELB, CloudWatch Logs `/ecs/3tier-prod-*`, ACM, Route 53(호스팅 존 1개), IAM 역할·정책 `3tier-prod-*`, PassRole `3tier-prod-*`. **data**: RDS `db-3tier-prod*`, Secrets Manager `3tier-prod-*`, KMS(Secrets Manager·RDS 경유만), S3 `3tier-assets-*` 버킷 1개, CloudFront | 신뢰 조건을 `repo:DDongHyun00@<owner_id>/3-tier-terraform-ecs@<repo_id>:ref:refs/heads/main`과 PR로 제한(2026-07 이후 레포는 sub에 불변 ID 포함). 다른 레포·브랜치는 수임 불가. 권한은 AdministratorAccess로 시작해(DEC-21) CloudTrail 호출 기록과 코드로 좁혔다(#35). 리소스는 이름·ARN으로 좁힐 수 있는 곳만 좁혔고, EC2·ACM·CloudFront처럼 ID로만 식별되는 것은 `*`. IAM은 `3tier-prod-*`로만 허용해 이 역할 자신과 정책은 고칠 수 없고, 붙일 수 있는 정책도 ECS 실행 정책과 `3tier-prod-*`로 제한 |
 | `3tier-ecs-task-execution` | ECS 에이전트 | `AmazonECSTaskExecutionRolePolicy` + Secrets Manager 시크릿 1개 `GetSecretValue` | 이미지 풀, 로그 쓰기, 시크릿 주입에 필요한 것만 |
 | `3tier-ecs-task` | 앱 컨테이너 | S3 버킷 1개 `GetObject`, `PutObject` | 앱이 AWS에 하는 일은 첨부파일 읽기·쓰기뿐 |
 

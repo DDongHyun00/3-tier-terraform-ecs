@@ -53,11 +53,5 @@ resource "aws_iam_role" "github_deploy" {
   assume_role_policy = data.aws_iam_policy_document.github_trust.json
 }
 
-# 3. 권한: AdministratorAccess로 시작한다 (DEC-21).
-#    필요한 권한 목록은 실제 apply를 해 봐야 알 수 있으므로, E06(#35)에서
-#    CloudTrail·Access Analyzer의 호출 기록을 보고 서비스별 정책으로 좁힌다.
-#    그 전까지는 위 신뢰 조건(레포·브랜치 제한)이 유일한 제한이다.
-resource "aws_iam_role_policy_attachment" "github_deploy_admin" {
-  role       = aws_iam_role.github_deploy.name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-}
+# 3. 권한: AdministratorAccess로 시작했다가(DEC-21) #35에서 서비스별 고객 관리형 정책으로 좁혔다.
+#    정책 내용은 deploy_policies.tf.
