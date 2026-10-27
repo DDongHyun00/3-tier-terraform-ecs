@@ -7,6 +7,7 @@
 #
 # 권한 상승 차단: 이 역할이 만들거나 고치는 IAM 역할에는 permissions boundary(3tier-ecs-boundary)가 반드시 붙어야 한다.
 # 역할에 무슨 정책을 넣어도 실제 권한은 boundary 안(이미지 풀, 로그, 시크릿 읽기, assets 객체)으로 묶인다.
+# IAM 역할·정책·PassRole은 main 것(3tier-prod-*)만. 이 역할 자신·자기 정책·boundary는 명시적으로 거부한다.
 
 data "aws_caller_identity" "current" {}
 
@@ -16,7 +17,6 @@ locals {
   account     = data.aws_caller_identity.current.account_id
   region      = data.aws_region.current.region
   main_prefix = "3tier-prod" # terraform/main의 name_prefix (3tier-<env>)
-  iam_prefix  = "3tier"      # IAM 역할·정책 이름 접두사
 
   project_tag = "3-tier-terraform-ecs" # provider default_tags의 Project 값
 
@@ -247,7 +247,7 @@ data "aws_iam_policy_document" "deploy_compute" {
   statement {
     sid       = "PassRoleToEcsTasks"
     actions   = ["iam:PassRole"]
-    resources = ["arn:aws:iam::${local.account}:role/${local.iam_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
 
     condition {
       test     = "StringEquals"
@@ -367,7 +367,7 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:AttachRolePolicy",
       "iam:DetachRolePolicy",
     ]
-    resources = ["arn:aws:iam::${local.account}:role/${local.iam_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
 
     condition {
       test     = "StringEquals"
@@ -391,7 +391,7 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:ListInstanceProfilesForRole",
       "iam:GetRolePolicy",
     ]
-    resources = ["arn:aws:iam::${local.account}:role/${local.iam_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
   }
 
   statement {
@@ -407,20 +407,38 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:TagPolicy",
       "iam:UntagPolicy",
     ]
-    resources = ["arn:aws:iam::${local.account}:policy/${local.iam_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:policy/${local.main_prefix}-*"]
   }
 
-  # boundary 자체는 고칠 수 없다. 위 IamPolicies(3tier-*)에 걸리므로 명시적으로 거부한다
+  # 이 역할 자신, 이 역할의 정책, boundary는 어떤 Allow가 있어도 고칠 수 없다(권한 상승·신뢰 조건 확대 차단)
   statement {
-    sid    = "DenyBoundaryChange"
+    sid    = "DenySelfAndBoundaryChange"
     effect = "Deny"
     actions = [
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:UpdateRoleDescription",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+      "iam:DeleteRolePermissionsBoundary",
+      "iam:TagRole",
+      "iam:UntagRole",
       "iam:CreatePolicyVersion",
       "iam:DeletePolicy",
       "iam:DeletePolicyVersion",
       "iam:SetDefaultPolicyVersion",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
     ]
-    resources = [local.ecs_boundary_arn]
+    resources = [
+      aws_iam_role.github_deploy.arn,
+      "arn:aws:iam::${local.account}:policy/3tier-github-deploy*",
+      local.ecs_boundary_arn,
+    ]
   }
 }
 
