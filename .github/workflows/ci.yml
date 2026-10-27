@@ -68,20 +68,16 @@ jobs:
       TF_IN_AUTOMATION: "true"
       TF_VAR_account_suffix: ${{ vars.TF_VAR_ACCOUNT_SUFFIX }}
       TF_VAR_image_tag: ${{ vars.TF_VAR_IMAGE_TAG }}
-      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }} # 잡 env로 넘긴다. 단계 env는 로그 머리에 값이 찍힌다
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.16.5
           terraform_wrapper: false
-      # 계정 ID 12자리를 이 잡의 로그에서 가린다(#59). 자격 증명 액션이 시작할 때 role-to-assume(ARN)을 먼저 찍으므로 그 앞에서 등록한다
-      - name: mask account id
-        run: |
-          echo "::add-mask::$(echo "$AWS_DEPLOY_ROLE_ARN" | cut -d: -f5)"
+      # 계정 ID는 Secret으로 두어야 단계 머리 env 출력까지 가려진다(#59). vars나 env로 넘기면 마스크보다 먼저 로그에 찍힌다
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy
           aws-region: ap-northeast-2
           mask-aws-account-id: true
       - name: fmt
