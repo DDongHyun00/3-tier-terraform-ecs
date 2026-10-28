@@ -14,7 +14,6 @@ on:
 permissions:
   contents: read
   id-token: write # OIDC 토큰 발급
-  actions: write  # 레포 변수 TF_VAR_IMAGE_TAG 갱신
 
 # 배포는 한 번에 하나만. 겹치면 뒤의 것이 기다린다
 concurrency:
@@ -92,13 +91,6 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
           wait-for-minutes: 15
-
-      # Terraform이 처음부터 다시 만들 때 쓸 기준 이미지 태그를 맞춰 둔다(실패해도 배포는 성공)
-      - name: sync TF_VAR_IMAGE_TAG
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh variable set TF_VAR_IMAGE_TAG --body "${GITHUB_SHA::7}"
 
       - name: summary (#36 측정)
         if: always()

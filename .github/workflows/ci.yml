@@ -67,7 +67,6 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       TF_VAR_account_suffix: ${{ vars.TF_VAR_ACCOUNT_SUFFIX }}
-      TF_VAR_image_tag: ${{ vars.TF_VAR_IMAGE_TAG }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
