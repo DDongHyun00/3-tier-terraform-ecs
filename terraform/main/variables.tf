@@ -35,8 +35,3 @@ variable "domain_name" {
   type        = string
   default     = "3tier.link"
 }
-
-variable "image_tag" {
-  description = "배포할 이미지 태그(커밋 SHA). 수동 배포는 tfvars, CI는 -var로 넘긴다"
-  type        = string
-}
