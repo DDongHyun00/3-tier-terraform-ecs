@@ -16,7 +16,7 @@ resource "aws_cloudwatch_log_group" "app" {
 }
 
 # ---------- 태스크 정의 ----------
-# 이미지 태그가 바뀌면 새 리비전이 생기고 서비스가 롤링 배포한다.
+# 이미지가 바뀌면 새 리비전이 생긴다. 서비스는 task_definition 변경을 무시하므로(ignore_changes) 롤링 배포는 deploy.yml이 한다.
 resource "aws_ecs_task_definition" "app" {
   family                   = "${var.name_prefix}-board"
   requires_compatibilities = ["FARGATE"]
