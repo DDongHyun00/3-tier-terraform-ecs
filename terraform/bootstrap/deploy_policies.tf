@@ -125,9 +125,10 @@ data "aws_iam_policy_document" "deploy_state_ecr" {
 # ---------- 2. 네트워크 (EC2) ----------
 data "aws_iam_policy_document" "deploy_network" {
   # Describe는 리소스 수준 권한을 지원하지 않아 *
+  # GetSecurityGroupsForVpc: ALB 생성 때 ELB가 이 역할로 호출한다(invokedBy, Access Analyzer 대조로 확인)
   statement {
     sid       = "Ec2Read"
-    actions   = ["ec2:Describe*"]
+    actions   = ["ec2:Describe*", "ec2:GetSecurityGroupsForVpc"]
     resources = ["*"]
   }
 
@@ -143,7 +144,6 @@ data "aws_iam_policy_document" "deploy_network" {
       "ec2:AttachInternetGateway",
       "ec2:DetachInternetGateway",
       "ec2:AllocateAddress",
-      "ec2:DisassociateAddress",
       "ec2:CreateNatGateway",
       "ec2:CreateRouteTable",
       "ec2:AssociateRouteTable",
@@ -179,6 +179,20 @@ data "aws_iam_policy_document" "deploy_network" {
       test     = "StringEquals"
       variable = "aws:ResourceTag/Project"
       values   = [local.project_tag]
+    }
+  }
+
+  # EIP 연결 해제(destroy 때 ReleaseAddress 앞에 호출). 연결 ID(eipassoc-)로 요청해 리소스 수준 권한이 없다.
+  # EIP ARN으로 좁혔다가 destroy가 UnauthorizedOperation(리소스 */*)로 막혔다. 태그 조건도 못 쓰므로 *, 리전만 고정
+  statement {
+    sid       = "Ec2DisassociateAddress"
+    actions   = ["ec2:DisassociateAddress"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [local.region]
     }
   }
 
