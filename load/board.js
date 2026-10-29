@@ -2,7 +2,8 @@
 // 실행법과 측정 항목은 load/README.md.
 //
 //   k6 run -e PROFILE=calibrate load/board.js            보정: 30→60→120→200 RPS 계단, 1분씩
-//   k6 run -e PROFILE=main -e RATE=<RPS> load/board.js   본 시험: 오르막 1분 + 유지 10분 + 내리막 1분
+//   k6 run -e PROFILE=main -e RATE=<RPS> --out csv=<파일> load/board.js   본 시험: 오르막 1분 + 유지 10분 + 내리막 1분
+//   스케일 아웃 전·후 p95는 CSV를 경계 시각으로 나눠 load/p95.mjs로 집계한다(요약은 시험 전체 하나뿐이다)
 import http from 'k6/http';
 import { check } from 'k6';
 
