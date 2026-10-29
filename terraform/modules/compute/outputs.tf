@@ -27,3 +27,12 @@ output "log_group_name" {
 output "task_role_arn" {
   value = aws_iam_role.task.arn
 }
+
+# CloudWatch 지표의 LoadBalancer·TargetGroup 차원 값. ARN 뒤쪽(app/<이름>/<id>, targetgroup/<이름>/<id>)이다
+output "alb_arn_suffix" {
+  value = aws_lb.this.arn_suffix
+}
+
+output "target_group_arn_suffix" {
+  value = aws_lb_target_group.app.arn_suffix
+}

@@ -15,6 +15,11 @@ output "db_instance_id" {
   value = aws_db_instance.this.id
 }
 
+# CloudWatch 지표 차원 DBInstanceIdentifier 값(db-3tier-prod). 위의 id는 리소스 ID(db-XXXX…)라 지표에 못 쓴다
+output "db_identifier" {
+  value = aws_db_instance.this.identifier
+}
+
 output "db_secret_arn" {
   description = "Secrets Manager 시크릿 ARN. ECS 태스크 실행 역할이 읽는다"
   value       = aws_secretsmanager_secret.db.arn
