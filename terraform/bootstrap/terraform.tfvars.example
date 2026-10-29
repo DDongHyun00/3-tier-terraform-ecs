@@ -2,3 +2,5 @@
 account_suffix = "0000"                              # AWS 계정 ID 뒤 4자리. state 버킷 이름 접미사
 github_repo    = "DDongHyun00/3-tier-terraform-ecs" # OIDC 배포 역할을 수임할 수 있는 레포
 domain_name    = "3tier.link"                        # Route 53 호스팅 존
+slack_team_id    = "T00000000" # Q Developer에 인증한 Slack 워크스페이스 ID
+slack_channel_id = "C00000000" # 알람 채널 #aws-alerts ID
