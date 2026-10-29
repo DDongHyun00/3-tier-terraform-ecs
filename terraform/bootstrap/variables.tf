@@ -13,6 +13,16 @@ variable "domain_name" {
   type        = string
 }
 
+variable "slack_team_id" {
+  description = "Q Developer에 인증한 Slack 워크스페이스 ID(T로 시작). Q Developer 콘솔의 클라이언트 화면에서 확인"
+  type        = string
+}
+
+variable "slack_channel_id" {
+  description = "알람을 받을 Slack 채널 ID(C로 시작, #aws-alerts). Slack 채널 정보 맨 아래에서 확인"
+  type        = string
+}
+
 variable "github_owner_id" {
   description = "GitHub 계정의 숫자 ID. OIDC sub 클레임의 불변 식별자. gh api users/<owner> --jq .id"
   type        = number

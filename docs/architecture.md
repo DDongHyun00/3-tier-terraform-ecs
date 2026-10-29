@@ -95,11 +95,24 @@ flowchart LR
 ```mermaid
 flowchart LR
     M[CloudWatch 지표<br/>ALB · ECS · RDS] --> AL[CloudWatch 알람]
-    AL --> SNS[SNS 토픽<br/>3tier-prod-alarms]
+    AL --> SNS[SNS 토픽<br/>3tier-prod-alarms<br/>KMS alias/3tier-alerts]
     SNS --> Q[Amazon Q Developer<br/>in chat applications]
     Q --> SL[Slack ddonghyun-ops<br/>#aws-alerts]
     B[AWS Budgets] -->|월 예산 80% · 100%| MAIL[이메일]
 ```
+
+| 알람 | 조건 |
+|---|---|
+| `3tier-prod-alb-5xx-rate` | (ALB 5xx + 앱 5xx) / 요청 > 5%, 5분 중 3분. 분당 요청 10건 미만은 0으로 계산 |
+| `3tier-prod-alb-unhealthy-targets` | 비정상 타깃 ≥ 1, 2분 연속 |
+| `3tier-prod-ecs-cpu-high` | 서비스 평균 CPU > 80%, 5분 연속 |
+| `3tier-prod-rds-storage-low` | 여유 스토리지 < 2 GB |
+| `3tier-prod-rds-connections-high` | 연결 수 > 60, 5분 연속 |
+
+- 울릴 때와 복구될 때 모두 Slack으로 보내도록 구성했다.
+- 알람은 main(매 세션 생성·삭제)에, SNS 토픽·KMS 키·Q Developer 채널 설정은 bootstrap(상시)에 두었다. Q Developer는 채널 설정을 만들 때 토픽에 구독을 건다. 토픽을 main에 두면 destroy 때 구독이 사라지고 다시 apply해도 되살아나지 않는다.
+- 토픽은 고객 관리형 KMS 키로 암호화했다. CloudWatch 알람은 AWS 관리형 키(aws/sns)로 암호화된 토픽에는 발행하지 못하므로, 키 정책에서 이 계정의 알람(`aws:SourceAccount`, `aws:SourceArn`)에만 데이터 키 사용을 허용했다. 키 로테이션도 켰다.
+- Q Developer API는 서울 리전에 없어서 채널 설정은 us-east-2에 두고 서울 토픽을 연결했다. 채널 가드레일은 기본값(AdministratorAccess) 대신 CloudWatchReadOnlyAccess로 제한했다.
 
 ## 5. 네트워크 설계
 
@@ -215,7 +228,7 @@ flowchart LR
 
 | 역할 | 누가 수임 | 권한 | 최소 권한 근거 |
 |---|---|---|---|
-| `3tier-github-deploy` | GitHub Actions (OIDC) | 고객 관리형 정책 5개(`terraform/bootstrap/deploy_policies.tf`). **state-ecr**: state 버킷의 `main/` 객체 읽기·쓰기·삭제(잠금 파일 포함), ECR `3tier/board` push. **network**: EC2(VPC, 서브넷, IGW, EIP, NAT, 라우트, SG) 생성·변경, 삭제는 `Project` 태그가 붙은 것만. **compute**: ECS, ELB, CloudWatch Logs `/ecs/3tier-prod-*`, ACM, Route 53(호스팅 존 1개), IAM 역할·정책 `3tier-prod-*`, PassRole `3tier-prod-*`(ECS 태스크에만). **data**: RDS `db-3tier-prod*`, Secrets Manager `3tier-prod-*`, KMS(Secrets Manager·RDS 경유만), S3 `3tier-assets-*` 버킷 1개, CloudFront. **observability**: Application Auto Scaling, CloudWatch 알람·대시보드 `3tier-prod-*`, SNS `3tier-prod-*` | 신뢰 조건을 `repo:DDongHyun00@<owner_id>/3-tier-terraform-ecs@<repo_id>:ref:refs/heads/main`과 PR로 제한(2026-07 이후 레포는 sub에 불변 ID 포함). 다른 레포·브랜치는 수임 불가. 권한은 AdministratorAccess로 시작해(DEC-21) CloudTrail 호출 기록과 코드로 좁혔다(#35). 리소스는 이름·ARN(리전·계정·리소스 종류)으로 좁혔고, 이름이 없는 EC2 리소스의 삭제는 태그로 좁혔다. 역할 생성·정책 부여는 permissions boundary `3tier-ecs-boundary`가 붙은 역할에만 허용해, 어떤 정책을 넣어도 ECS 역할의 실제 권한은 boundary 안에 머문다. 이 역할 자신(`3tier-github-deploy`), 그 정책(`3tier-github-deploy*`), boundary 정책은 명시적 Deny로 수정·삭제·태그·신뢰 정책 변경을 막았다 |
+| `3tier-github-deploy` | GitHub Actions (OIDC) | 고객 관리형 정책 5개(`terraform/bootstrap/deploy_policies.tf`). **state-ecr**: state 버킷의 `main/` 객체 읽기·쓰기·삭제(잠금 파일 포함), ECR `3tier/board` push. **network**: EC2(VPC, 서브넷, IGW, EIP, NAT, 라우트, SG) 생성·변경, 삭제는 `Project` 태그가 붙은 것만. **compute**: ECS, ELB, CloudWatch Logs `/ecs/3tier-prod-*`, ACM, Route 53(호스팅 존 1개), IAM 역할·정책 `3tier-prod-*`, PassRole `3tier-prod-*`(ECS 태스크에만). **data**: RDS `db-3tier-prod*`, Secrets Manager `3tier-prod-*`, KMS(Secrets Manager·RDS 경유만), S3 `3tier-assets-*` 버킷 1개, CloudFront. **observability**: Application Auto Scaling, CloudWatch 알람·대시보드 `3tier-prod-*`, SNS `3tier-prod-*`(알람 토픽을 이름으로 찾는 `ListTopics` 포함) | 신뢰 조건을 `repo:DDongHyun00@<owner_id>/3-tier-terraform-ecs@<repo_id>:ref:refs/heads/main`과 PR로 제한(2026-07 이후 레포는 sub에 불변 ID 포함). 다른 레포·브랜치는 수임 불가. 권한은 AdministratorAccess로 시작해(DEC-21) CloudTrail 호출 기록과 코드로 좁혔다(#35). 리소스는 이름·ARN(리전·계정·리소스 종류)으로 좁혔고, 이름이 없는 EC2 리소스의 삭제는 태그로 좁혔다. 역할 생성·정책 부여는 permissions boundary `3tier-ecs-boundary`가 붙은 역할에만 허용해, 어떤 정책을 넣어도 ECS 역할의 실제 권한은 boundary 안에 머문다. 이 역할 자신(`3tier-github-deploy`), 그 정책(`3tier-github-deploy*`), boundary 정책은 명시적 Deny로 수정·삭제·태그·신뢰 정책 변경을 막았다 |
 | (boundary) `3tier-ecs-boundary` | — | ECR 이미지 풀, 로그 스트림 쓰기 `/ecs/3tier-prod-*`, 시크릿 `3tier-prod-*` 읽기, assets 버킷 객체 읽기·쓰기 | 아래 두 ECS 역할의 권한 상한. 배포 역할이 역할에 정책을 넣을 수 있어도 이 범위를 넘지 못한다 |
 | `3tier-ecs-task-execution` | ECS 에이전트 | `AmazonECSTaskExecutionRolePolicy` + Secrets Manager 시크릿 1개 `GetSecretValue` | 이미지 풀, 로그 쓰기, 시크릿 주입에 필요한 것만. boundary `3tier-ecs-boundary` |
 | `3tier-ecs-task` | 앱 컨테이너 | S3 버킷 1개 `GetObject`, `PutObject` | 앱이 AWS에 하는 일은 첨부파일 읽기·쓰기뿐. boundary `3tier-ecs-boundary` |
@@ -230,14 +243,15 @@ terraform/
 │   ├── state 버킷 (3tier-tfstate-<계정ID 뒤 4자리>, 버전 관리, SSE, 퍼블릭 차단)
 │   ├── GitHub OIDC Provider + 역할 3tier-github-deploy
 │   ├── ECR 3tier/board (태그 불변, 스캔, 수명 주기)
-│   └── Route 53 호스팅 존 참조 (data 소스. 존은 도메인 구매 시 자동 생성됨)
+│   ├── Route 53 호스팅 존 참조 (data 소스. 존은 도메인 구매 시 자동 생성됨)
+│   └── 알람 알림 경로: SNS 토픽 3tier-prod-alarms + KMS 키 + Q Developer Slack 채널 설정·역할 3tier-chatbot
 ├── main/             반복 생성·삭제. 로컬 또는 GitHub Actions에서 apply
 │   └── modules 호출, 변수(multi_az 등), 출력(ALB DNS, RDS 엔드포인트)
 └── modules/
     ├── network/      VPC, 서브넷, IGW, NAT, 라우트, SG
     ├── data/         RDS, Secrets Manager, S3, CloudFront
     ├── compute/      ECS, ALB, ACM, Route 53 레코드, IAM 역할
-    └── observability/ CloudWatch 대시보드·알람, SNS, 오토스케일링
+    └── observability/ CloudWatch 대시보드·알람(SNS 토픽은 bootstrap), 오토스케일링
 ```
 
 - 원격 state는 S3, 잠금은 S3 네이티브 잠금(`use_lockfile = true`, Terraform 1.11+). bootstrap과 main은 같은 버킷의 다른 키를 씁니다.
