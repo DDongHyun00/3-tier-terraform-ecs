@@ -63,7 +63,8 @@ jobs:
           tags: ${{ env.IMAGE }}
           provenance: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # mode=max는 매 커밋 바뀌는 빌더 중간층 약 263 MiB를 매번 저장해 #36에서 내보내기만 2분 36초가 걸려 min으로 바꿨다
+          cache-to: type=gha,mode=min
 
       - name: push done
         run: echo "T1=$(date +%s)" >> "$GITHUB_ENV"
