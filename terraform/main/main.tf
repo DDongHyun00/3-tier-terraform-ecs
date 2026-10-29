@@ -47,6 +47,11 @@ data "aws_route53_zone" "main" {
   private_zone = false
 }
 
+# 알람 토픽은 bootstrap에 있다(Q Developer 구독이 destroy로 사라지지 않게, #38). 없으면 plan이 여기서 멈춘다
+data "aws_sns_topic" "alarms" {
+  name = "${local.name_prefix}-alarms"
+}
+
 module "compute" {
   source = "../modules/compute"
 
@@ -68,4 +73,19 @@ module "compute" {
 
   domain_name    = var.domain_name
   hosted_zone_id = data.aws_route53_zone.main.zone_id
+}
+
+module "observability" {
+  source = "../modules/observability"
+
+  name_prefix = local.name_prefix
+  region      = var.region
+
+  alb_arn_suffix          = module.compute.alb_arn_suffix
+  target_group_arn_suffix = module.compute.target_group_arn_suffix
+  cluster_name            = module.compute.cluster_name
+  service_name            = module.compute.service_name
+  db_identifier           = module.data.db_identifier
+
+  alarm_topic_arn = data.aws_sns_topic.alarms.arn
 }

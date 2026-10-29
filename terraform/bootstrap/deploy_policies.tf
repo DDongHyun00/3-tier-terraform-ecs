@@ -655,6 +655,13 @@ data "aws_iam_policy_document" "deploy_observability" {
     resources = ["arn:aws:cloudwatch::${local.account}:dashboard/${local.main_prefix}-*"]
   }
 
+  # 알람 토픽은 bootstrap에 있고(alerts.tf) main은 이름으로 찾는다(data 소스). 목록 조회는 리소스 수준 권한이 없어 *
+  statement {
+    sid       = "SnsList"
+    actions   = ["sns:ListTopics"]
+    resources = ["*"]
+  }
+
   statement {
     sid = "Sns"
     actions = [
