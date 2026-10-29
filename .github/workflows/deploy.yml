@@ -83,6 +83,7 @@ jobs:
           image: ${{ env.IMAGE }}
 
       # 새 리비전 등록 → 서비스 갱신 → 롤링(100/200) 완료까지 대기. 서킷 브레이커가 롤백하면 여기서 실패한다
+      # 폴링 간격 상한 15초: 상한이 없으면 SDK 기본 600초까지 간격이 늘어 #36에서 롤백 완료 8분 33초 뒤에 알았다
       - name: deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
@@ -91,6 +92,7 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
           wait-for-minutes: 15
+          wait-max-delay-seconds: 15
 
       - name: summary (#36 측정)
         if: always()
