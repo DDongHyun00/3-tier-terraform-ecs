@@ -57,3 +57,7 @@ output "ecs_service_name" {
 output "log_group_name" {
   value = module.compute.log_group_name
 }
+
+output "dashboard_name" {
+  value = module.observability.dashboard_name
+}
