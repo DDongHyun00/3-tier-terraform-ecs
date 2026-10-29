@@ -86,6 +86,9 @@ resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.name_prefix}-overview"
 
   dashboard_body = jsonencode({
+    # 열었을 때 보이는 기간. 세션 하나(약 2시간)가 한 화면에 들어오게
+    start = "-PT3H"
+
     widgets = [
       for i, w in local.widgets : {
         type   = "metric"
