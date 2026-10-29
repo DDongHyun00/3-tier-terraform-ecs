@@ -73,3 +73,34 @@ variable "rds_connections_high" {
   type        = number
   default     = 60
 }
+
+# ---------- 오토스케일링 (#39, docs/architecture.md 6.1절) ----------
+variable "autoscaling_min" {
+  description = "최소 태스크 수. AZ마다 1개"
+  type        = number
+  default     = 2
+}
+
+variable "autoscaling_max" {
+  description = "최대 태스크 수"
+  type        = number
+  default     = 4
+}
+
+variable "autoscaling_cpu_target" {
+  description = "목표 추적 기준. 서비스 평균 CPU를 이 값(%) 근처로 유지하도록 태스크 수를 바꾼다"
+  type        = number
+  default     = 60
+}
+
+variable "scale_out_cooldown" {
+  description = "늘린 뒤 다음 늘림까지 기다리는 초. 새 태스크 기동(약 23초)과 헬스체크 2회(30초)를 지나면 다시 판단"
+  type        = number
+  default     = 60
+}
+
+variable "scale_in_cooldown" {
+  description = "줄인 뒤 다음 줄임까지 기다리는 초. Application Auto Scaling의 ECS 기본값. 부하가 출렁일 때 늘렸다 줄였다 반복하는 것을 막는다"
+  type        = number
+  default     = 300
+}
