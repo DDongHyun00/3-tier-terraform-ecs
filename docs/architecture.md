@@ -109,10 +109,10 @@ flowchart LR
 | `3tier-prod-rds-storage-low` | 여유 스토리지 < 2 GB |
 | `3tier-prod-rds-connections-high` | 연결 수 > 60, 5분 연속 |
 
-- 울릴 때와 복구될 때 모두 Slack으로 보냅니다.
-- 알람은 main(매 세션 생성·삭제)에, SNS 토픽·KMS 키·Q Developer 채널 설정은 bootstrap(상시)에 둡니다. Q Developer는 채널 설정을 만들 때 토픽에 구독을 겁니다. 토픽을 main에 두면 destroy 때 구독이 사라지고 다시 apply해도 되살아나지 않습니다.
-- 토픽은 고객 관리형 KMS 키로 암호화합니다. CloudWatch 알람은 AWS 관리형 키(aws/sns)로 암호화된 토픽에는 발행하지 못하므로, 키 정책에서 이 계정의 알람(`aws:SourceAccount`, `aws:SourceArn`)에만 데이터 키 사용을 허용합니다. 키 로테이션은 켭니다.
-- Q Developer API는 서울 리전에 없어서 채널 설정은 us-east-2에 두고 서울 토픽을 연결합니다. 채널 가드레일은 기본값(AdministratorAccess) 대신 CloudWatchReadOnlyAccess로 제한합니다.
+- 울릴 때와 복구될 때 모두 Slack으로 보내도록 구성했다.
+- 알람은 main(매 세션 생성·삭제)에, SNS 토픽·KMS 키·Q Developer 채널 설정은 bootstrap(상시)에 두었다. Q Developer는 채널 설정을 만들 때 토픽에 구독을 건다. 토픽을 main에 두면 destroy 때 구독이 사라지고 다시 apply해도 되살아나지 않는다.
+- 토픽은 고객 관리형 KMS 키로 암호화했다. CloudWatch 알람은 AWS 관리형 키(aws/sns)로 암호화된 토픽에는 발행하지 못하므로, 키 정책에서 이 계정의 알람(`aws:SourceAccount`, `aws:SourceArn`)에만 데이터 키 사용을 허용했다. 키 로테이션도 켰다.
+- Q Developer API는 서울 리전에 없어서 채널 설정은 us-east-2에 두고 서울 토픽을 연결했다. 채널 가드레일은 기본값(AdministratorAccess) 대신 CloudWatchReadOnlyAccess로 제한했다.
 
 ## 5. 네트워크 설계
 
