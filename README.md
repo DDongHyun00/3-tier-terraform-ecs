@@ -19,6 +19,7 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 ├── app/                  게시판 앱 (Spring Boot, Dockerfile 포함)
 ├── docker-compose.yml    로컬 확인용: 앱 + PostgreSQL
 ├── docs/                 아키텍처 설계 문서, 비용 리포트
+├── load/                 k6 부하 테스트 스크립트 (오토스케일링 확인)
 ├── terraform/
 │   ├── bootstrap/        최초 1회 생성 후 유지: state 버킷, OIDC Provider, Route 53, ECR
 │   ├── main/             반복 생성·삭제: 모듈 호출, 변수, 출력 (terraform.tfvars.example 참고)
