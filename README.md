@@ -133,6 +133,12 @@ ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스�
 
 **알람**: 부하 중 ECS CPU가 6분 동안 93~98%였는데 ECS CPU 80%·5분 알람(`3tier-prod-ecs-cpu-high`)은 울리지 않았습니다. 원인은 트러블슈팅 기록에서 따로 다룹니다.
 
+### 장애 재현 (E08)
+
+| 장애 | 사용자 영향 | 복구 | 울린 알람 | 기록 |
+|---|---|---|---|---|
+| DB 연결 실패 (FIS로 DB 서브넷 10분 차단) | 세션에서 측정 | 세션에서 측정 | 세션에서 측정 | [03-db-connection-failure.md](docs/troubleshooting/03-db-connection-failure.md) |
+
 ## 진행 상태
 
 - [x] 게시판 앱 준비
