@@ -27,10 +27,12 @@ ECS 태스크가 갑자기 멈췄을 때 ALB와 ECS가 어떻게 복구하는지
         aws ecs list-tasks --cluster 3tier-prod-cluster --service-name 3tier-prod-board --profile 3tier
         aws ecs stop-task --cluster 3tier-prod-cluster --task <태스크 ARN> --reason "E08-41 fault injection: stop 1 task" --profile 3tier
 
-3. 2/2 healthy로 돌아오고 5분 뒤, 남은 태스크 2개를 동시에 멈춘다.
+3. 2/2 healthy로 돌아오고 5분 뒤, 남은 태스크 2개를 동시에 멈춘다. 순서대로 실행하면 첫 호출이 늦어지는 동안 복구가 시작돼 "동시" 조건이 깨지므로, PowerShell 백그라운드 작업 두 개로 함께 시작하고 각 결과(태스크 ARN, 원하는 상태 STOPPED)를 확인한다.
 
-        aws ecs stop-task --cluster 3tier-prod-cluster --task <태스크 ARN 1> --reason "E08-41 fault injection: stop 2 tasks" --profile 3tier
-        aws ecs stop-task --cluster 3tier-prod-cluster --task <태스크 ARN 2> --reason "E08-41 fault injection: stop 2 tasks" --profile 3tier
+        $arns = (aws ecs list-tasks --cluster 3tier-prod-cluster --service-name 3tier-prod-board --profile 3tier --query "taskArns" --output text) -split "\s+"
+        $jobs = $arns | ForEach-Object { Start-Job -ArgumentList $_ -ScriptBlock { param($arn) aws ecs stop-task --cluster 3tier-prod-cluster --task $arn --reason "E08-41 fault injection: stop 2 tasks" --profile 3tier --query "task.[taskArn,desiredStatus,stoppedReason]" --output text } }
+        $jobs | Wait-Job | Receive-Job
+        $jobs | Remove-Job
 
 4. 그동안 타깃 상태를 본다.
 
@@ -78,14 +80,16 @@ ECS 태스크가 갑자기 멈췄을 때 ALB와 ECS가 어떻게 복구하는지
 
 사용자 체감(클라이언트)과 서버 지표를 함께 적는다.
 
-- 클라이언트: `scripts/probe.ps1`의 CSV. 영향 시간은 첫 실패(200이 아닌 응답 또는 000)부터 마지막 실패까지다. 실패가 없으면 0초다.
+- 클라이언트: `scripts/probe.ps1`의 CSV. 실패는 `ok` 열이 0인 요청(상태 코드가 200이 아니거나 curl 종료 코드가 0이 아님. 응답 헤더 200을 받은 뒤 본문 수신 중 시간 초과된 요청도 실패)이고, 영향 시간은 첫 실패부터 마지막 실패까지다. 실패가 없으면 0초다. 줄은 응답이 끝난 순서로 쌓이므로 `time_kst`(요청 시작 시각)로 정렬해서 본다.
 - 서버: ALB 지표(1분 단위)와 ECS 서비스 이벤트(초 단위).
 
         aws ecs describe-services --cluster 3tier-prod-cluster --services 3tier-prod-board --profile 3tier --query "services[0].events[:15].[createdAt,message]"
         aws cloudwatch get-metric-statistics --namespace AWS/ApplicationELB --metric-name HealthyHostCount --dimensions Name=TargetGroup,Value=<targetgroup/...> Name=LoadBalancer,Value=<app/...> --statistics Minimum --period 60 --start-time <시작> --end-time <끝> --profile 3tier
         aws cloudwatch describe-alarm-history --alarm-name 3tier-prod-alb-5xx-rate --history-item-type StateUpdate --profile 3tier
 
-  `HealthyHostCount` 대신 `HTTPCode_ELB_5XX_Count`(Sum), `UnHealthyHostCount`(Maximum)도 같은 형식으로 조회한다.
+  `UnHealthyHostCount`(Maximum)는 위와 같은 차원(TargetGroup + LoadBalancer)으로 조회한다. `HTTPCode_ELB_5XX_Count`·`HTTPCode_Target_5XX_Count`·`RequestCount`(Sum)는 알람과 같이 LoadBalancer 차원만으로 조회한다.
+
+        aws cloudwatch get-metric-statistics --namespace AWS/ApplicationELB --metric-name HTTPCode_ELB_5XX_Count --dimensions Name=LoadBalancer,Value=<app/...> --statistics Sum --period 60 --start-time <시작> --end-time <끝> --profile 3tier
 
 ## 원인
 
