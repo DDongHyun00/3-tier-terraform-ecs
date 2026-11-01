@@ -60,3 +60,38 @@ resource "aws_iam_role_policy_attachment" "task_assets_rw" {
   role       = aws_iam_role.task.name
   policy_arn = var.assets_rw_policy_arn
 }
+
+# ---------- 컨테이너 인스턴스 역할 (ECS on EC2, #87) ----------
+# ECS 에이전트(클러스터 등록·태스크 상태 보고)와 SSM 접속만. boundary가 같은 작업까지만 허용한다(#88).
+data "aws_iam_policy_document" "ec2_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ecs_instance" {
+  name                 = "${var.name_prefix}-ecs-instance"
+  assume_role_policy   = data.aws_iam_policy_document.ec2_assume.json
+  permissions_boundary = local.permissions_boundary_arn
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_instance_agent" {
+  role       = aws_iam_role.ecs_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_instance_ssm" {
+  role       = aws_iam_role.ecs_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ecs_instance" {
+  name = "${var.name_prefix}-ecs-instance"
+  role = aws_iam_role.ecs_instance.name
+}

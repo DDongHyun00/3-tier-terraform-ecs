@@ -126,3 +126,28 @@ variable "hosted_zone_id" {
   description = "Route 53 호스팅 존 ID"
   type        = string
 }
+
+# ---------- ECS on EC2 (#87, DEC-50) ----------
+variable "instance_type" {
+  description = "컨테이너 인스턴스 타입. t3.small은 1 GB 앱 태스크가 1개만 들어가 태스크 수만큼 인스턴스가 늘어난다"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "asg_min_size" {
+  description = "ASG 최소 인스턴스 수. 서비스 태스크 하한(2)과 맞춘다"
+  type        = number
+  default     = 2
+}
+
+variable "asg_max_size" {
+  description = "ASG 최대 인스턴스 수. 서비스 태스크 상한(4)과 맞춘다"
+  type        = number
+  default     = 4
+}
+
+variable "root_volume_size" {
+  description = "인스턴스 루트 볼륨(GB, gp3, 암호화)"
+  type        = number
+  default     = 30
+}
