@@ -74,6 +74,64 @@ data "aws_iam_policy_document" "ecs_boundary" {
     actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["arn:aws:s3:::3tier-assets-${var.account_suffix}/*"]
   }
+
+  # ECS on EC2(#87): 컨테이너 인스턴스 역할이 쓰는 ECS 에이전트 작업. AmazonEC2ContainerServiceforEC2Role의 작업과 같고 클러스터는 이 프로젝트 것만
+  statement {
+    sid       = "EcsAgentDiscover"
+    actions   = ["ecs:DiscoverPollEndpoint", "ec2:DescribeTags"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "EcsAgentCluster"
+    actions = [
+      "ecs:RegisterContainerInstance",
+      "ecs:DeregisterContainerInstance",
+      "ecs:UpdateContainerInstancesState",
+      "ecs:Submit*",
+      "ecs:Poll",
+      "ecs:StartTelemetrySession",
+      "ecs:TagResource",
+      "ecs:ListTagsForResource",
+    ]
+    resources = [
+      "arn:aws:ecs:${local.region}:${local.account}:cluster/${local.main_prefix}-*",
+      "arn:aws:ecs:${local.region}:${local.account}:container-instance/${local.main_prefix}-*/*",
+    ]
+  }
+
+  # SSM Session Manager 접속(SSH 키 없음, DEC-50 D7). AmazonSSMManagedInstanceCore의 작업과 같다
+  statement {
+    sid = "SsmManagedInstance"
+    actions = [
+      "ssm:DescribeAssociation",
+      "ssm:GetDeployablePatchSnapshotForInstance",
+      "ssm:GetDocument",
+      "ssm:DescribeDocument",
+      "ssm:GetManifest",
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:ListAssociations",
+      "ssm:ListInstanceAssociations",
+      "ssm:PutInventory",
+      "ssm:PutComplianceItems",
+      "ssm:PutConfigurePackageResult",
+      "ssm:UpdateAssociationStatus",
+      "ssm:UpdateInstanceAssociationStatus",
+      "ssm:UpdateInstanceInformation",
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+      "ec2messages:AcknowledgeMessage",
+      "ec2messages:DeleteMessage",
+      "ec2messages:FailMessage",
+      "ec2messages:GetEndpoint",
+      "ec2messages:GetMessages",
+      "ec2messages:SendReply",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "ecs_boundary" {
@@ -249,25 +307,17 @@ data "aws_iam_policy_document" "deploy_compute" {
       "ecs:DeleteService",
       "ecs:TagResource",
       "ecs:UntagResource",
+      "ecs:CreateCapacityProvider",
+      "ecs:UpdateCapacityProvider",
+      "ecs:DeleteCapacityProvider",
+      "ecs:PutClusterCapacityProviders",
     ]
     resources = [
       "arn:aws:ecs:${local.region}:${local.account}:cluster/${local.main_prefix}-*",
       "arn:aws:ecs:${local.region}:${local.account}:service/${local.main_prefix}-*/*",
       "arn:aws:ecs:${local.region}:${local.account}:task-definition/${local.main_prefix}-*:*",
+      "arn:aws:ecs:${local.region}:${local.account}:capacity-provider/${local.main_prefix}-*",
     ]
-  }
-
-  # 태스크 정의에 실행 역할·태스크 역할을 넣을 때(terraform, deploy.yml). ECS 태스크에 넘기는 것만
-  statement {
-    sid       = "PassRoleToEcsTasks"
-    actions   = ["iam:PassRole"]
-    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
-    }
   }
 
   statement {
@@ -453,6 +503,128 @@ data "aws_iam_policy_document" "deploy_compute" {
       "arn:aws:iam::${local.account}:policy/3tier-github-deploy*",
       local.ecs_boundary_arn,
     ]
+  }
+}
+
+# ---------- 3b. 컴퓨트: ECS on EC2 (#87, #88) ----------
+# 시작 템플릿·ASG·인스턴스 프로필·AMI 조회. compute 정책이 관리형 정책 한도(6,144자)를 넘어 따로 뒀다
+data "aws_iam_policy_document" "deploy_compute_ec2" {
+  # 컨테이너 인스턴스 역할을 EC2(인스턴스 프로필)에 넘길 때. ECS 태스크용 PassRole과 서비스 조건이 달라 문장을 나눈다
+  statement {
+    sid       = "PassRoleToEc2"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ec2.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid = "IamInstanceProfile"
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+    ]
+    resources = ["arn:aws:iam::${local.account}:instance-profile/${local.main_prefix}-*"]
+  }
+
+  # 조회는 리소스 수준 권한이 없어 *
+  statement {
+    sid       = "AutoScalingRead"
+    actions   = ["autoscaling:Describe*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "AutoScalingWrite"
+    actions = [
+      "autoscaling:CreateAutoScalingGroup",
+      "autoscaling:UpdateAutoScalingGroup",
+      "autoscaling:DeleteAutoScalingGroup",
+      "autoscaling:SetInstanceProtection",
+      "autoscaling:CreateOrUpdateTags",
+      "autoscaling:DeleteTags",
+    ]
+    resources = ["arn:aws:autoscaling:${local.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${local.main_prefix}-*"]
+  }
+
+  # 시작 템플릿. 생성 때 이름이 ARN에 없어(lt-ID) 리전만 고정하고, 삭제·수정은 프로젝트 태그가 붙은 것만
+  statement {
+    sid       = "Ec2LaunchTemplateCreate"
+    actions   = ["ec2:CreateLaunchTemplate"]
+    resources = ["arn:aws:ec2:${local.region}:${local.account}:launch-template/*"]
+  }
+
+  statement {
+    sid = "Ec2LaunchTemplateProjectOnly"
+    actions = [
+      "ec2:CreateLaunchTemplateVersion",
+      "ec2:ModifyLaunchTemplate",
+      "ec2:DeleteLaunchTemplate",
+      "ec2:DeleteLaunchTemplateVersions",
+    ]
+    resources = ["arn:aws:ec2:${local.region}:${local.account}:launch-template/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # ASG를 시작 템플릿으로 만들 때 호출자에게 RunInstances 권한이 있는지 확인한다. 인스턴스는 이 리전에서만
+  statement {
+    sid     = "Ec2RunInstancesForAsg"
+    actions = ["ec2:RunInstances"]
+    resources = [
+      "arn:aws:ec2:${local.region}:${local.account}:instance/*",
+      "arn:aws:ec2:${local.region}:${local.account}:volume/*",
+      "arn:aws:ec2:${local.region}:${local.account}:network-interface/*",
+      "arn:aws:ec2:${local.region}:${local.account}:launch-template/*",
+      "arn:aws:ec2:${local.region}:${local.account}:subnet/*",
+      "arn:aws:ec2:${local.region}:${local.account}:security-group/*",
+      "arn:aws:ec2:${local.region}::image/*",
+    ]
+  }
+
+  statement {
+    sid       = "Ec2TagOnLaunch"
+    actions   = ["ec2:CreateTags"]
+    resources = ["arn:aws:ec2:${local.region}:${local.account}:*/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values   = ["CreateLaunchTemplate", "RunInstances"]
+    }
+  }
+
+  # ECS 최적화 AMI ID 조회(공개 파라미터, DEC-50 D6)
+  statement {
+    sid       = "SsmEcsAmiParameter"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:aws:ssm:${local.region}::parameter/aws/service/ecs/optimized-ami/*"]
+  }
+
+  # 태스크 정의에 실행 역할·태스크 역할을 넣을 때(terraform, deploy.yml). ECS 태스크에 넘기는 것만
+  statement {
+    sid       = "PassRoleToEcsTasks"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
   }
 }
 
@@ -690,6 +862,7 @@ locals {
     compute       = data.aws_iam_policy_document.deploy_compute.json
     data          = data.aws_iam_policy_document.deploy_data.json
     observability = data.aws_iam_policy_document.deploy_observability.json
+    compute-ec2   = data.aws_iam_policy_document.deploy_compute_ec2.json
   }
 }
 
