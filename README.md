@@ -135,9 +135,12 @@ ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스�
 
 ### 장애 재현 (E08)
 
-| 장애 | 사용자 영향 | 복구 | 울린 알람 | 기록 |
-|---|---|---|---|---|
-| DB 연결 실패 (FIS로 DB 서브넷 10분 차단) | 세션에서 측정 | 세션에서 측정 | 세션에서 측정 | [03-db-connection-failure.md](docs/troubleshooting/03-db-connection-failure.md) |
+환경이 하나라 운영(prod)에서 의도적으로 실험했습니다. 장애마다 재현 방법·타임라인·원인·재발 방지를 `docs/troubleshooting/`에 적었습니다.
+
+| 장애 | 날짜 | 사용자 영향 | 복구 | 울린 알람 | 기록 |
+|---|---|---|---|---|---|
+| 잘못된 이미지 배포 | 2026-10-28 | 측정한 liveness 요청 217회 중 실패 0건 (게시판 요청 전체는 측정 안 함) | 서킷 브레이커 자동 롤백 5분 19초 (실패 판정 4분 5초 + 이전 리비전 복귀 1분 14초) | 없음 | [02-bad-image-rollback.md](docs/troubleshooting/02-bad-image-rollback.md) |
+| DB 연결 실패 (FIS로 DB 서브넷 10분 차단) | 2026-11-02 | 게시판·health 약 10분 실패(500·503, 30초 대기 뒤), liveness 666회 중 실패 0건 | 차단 해제와 동시에 재연결(1초 미만), 태스크 교체 0건 | 5xx 비율 알람, 차단 6분 11초 뒤 | [03-db-connection-failure.md](docs/troubleshooting/03-db-connection-failure.md) |
 
 ## 진행 상태
 
