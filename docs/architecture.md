@@ -105,9 +105,9 @@ flowchart LR
 |---|---|
 | `3tier-prod-alb-5xx-rate` | (ALB 5xx + 앱 5xx) / 요청 > 5%, 5분 중 3분. 분당 요청 10건 미만은 0으로 계산 |
 | `3tier-prod-alb-unhealthy-targets` | 비정상 타깃 ≥ 1, 2분 연속 |
-| `3tier-prod-ecs-cpu-high` | 서비스 평균 CPU > 80%, 5분 연속 |
+| `3tier-prod-ecs-cpu-high` | 서비스 평균 CPU > 80%, 5분 중 3분. 결측은 판정에서 뺀다 |
 | `3tier-prod-rds-storage-low` | 여유 스토리지 < 2 GB |
-| `3tier-prod-rds-connections-high` | 연결 수 > 60, 5분 연속 |
+| `3tier-prod-rds-connections-high` | 연결 수 > 60, 5분 중 3분. 결측은 판정에서 뺀다 |
 
 - 울릴 때와 복구될 때 모두 Slack으로 보내도록 구성했다.
 - 알람은 main(매 세션 생성·삭제)에, SNS 토픽·KMS 키·Q Developer 채널 설정은 bootstrap(상시)에 두었다. Q Developer는 채널 설정을 만들 때 토픽에 구독을 건다. 토픽을 main에 두면 destroy 때 구독이 사라지고 다시 apply해도 되살아나지 않는다.

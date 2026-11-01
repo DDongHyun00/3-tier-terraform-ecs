@@ -57,7 +57,7 @@ variable "alb_5xx_min_requests" {
 }
 
 variable "ecs_cpu_high_percent" {
-  description = "ECS 서비스 평균 CPU 알람 임계(%). 5분 연속이면 울린다. 오토스케일링(목표 60%)으로도 못 따라가는 상태"
+  description = "ECS 서비스 평균 CPU 알람 임계(%). 5분 중 3분 넘으면 울린다. 오토스케일링(목표 60%)으로도 못 따라가는 상태"
   type        = number
   default     = 80
 }
