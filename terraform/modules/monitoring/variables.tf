@@ -102,3 +102,8 @@ variable "compose_version" {
   type        = string
   default     = "v2.27.0"
 }
+
+variable "network_egress_dependency_ids" {
+  description = "관제 VPC 사설 서브넷의 인터넷 경로 리소스 ID(network 모듈 private_egress_dependency_ids). 값은 쓰지 않고 서버가 경로 뒤에 만들어지고 앞에 지워지게 하는 데만 쓴다"
+  type        = list(string)
+}

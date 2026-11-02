@@ -84,6 +84,11 @@ resource "aws_iam_instance_profile" "server" {
   role = aws_iam_role.server.name
 }
 
+# 관제 VPC의 인터넷 경로(사설 기본 경로·연결, 퍼블릭 경로·연결)에 대한 의존 자리표
+resource "terraform_data" "network_egress" {
+  input = var.network_egress_dependency_ids
+}
+
 # ---------- 서버 ----------
 resource "aws_instance" "server" {
   ami                    = data.aws_ssm_parameter.al2023_arm64.value
@@ -125,8 +130,14 @@ resource "aws_instance" "server" {
 
   tags = { Name = "${var.name_prefix}-prometheus" }
 
-  # 비밀 값이 먼저 있어야 user data가 읽는다
-  depends_on = [aws_secretsmanager_secret_version.grafana_admin, aws_iam_role_policy.server]
+  # 부팅 스크립트가 처음부터 밖으로 나갈 수 있어야 한다: 비밀 값, 역할 정책, 443 아웃바운드 규칙, 관제 VPC의 인터넷 경로(NAT·라우트·연결).
+  # 경로 의존은 destroy 때도 서버가 NAT보다 먼저 지워지게 한다(#108과 같은 이유)
+  depends_on = [
+    aws_secretsmanager_secret_version.grafana_admin,
+    aws_iam_role_policy.server,
+    aws_vpc_security_group_egress_rule.https_out,
+    terraform_data.network_egress,
+  ]
 
   lifecycle {
     # AMI 파라미터가 새 버전을 가리켜도 떠 있는 서버를 바꾸지 않는다(세션마다 새로 만들 때 최신을 쓴다)

@@ -4,11 +4,21 @@
 set -euo pipefail
 exec > >(tee /var/log/monitoring-bootstrap.log) 2>&1
 
+# 네트워크 단계는 재시도한다(NAT·DNS가 막 준비된 직후일 수 있다)
+retry() {
+  local n=0
+  until "$@"; do
+    n=$((n + 1))
+    if [ "$${n}" -ge 10 ]; then echo "failed after $${n} tries: $*"; return 1; fi
+    sleep 15
+  done
+}
+
 # ---------- Docker + compose 플러그인 ----------
-dnf install -y docker
+retry dnf install -y docker
 systemctl enable --now docker
 mkdir -p /usr/libexec/docker/cli-plugins
-curl -fsSL -o /usr/libexec/docker/cli-plugins/docker-compose \
+retry curl -fsSL -o /usr/libexec/docker/cli-plugins/docker-compose \
   "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-aarch64"
 chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 
@@ -79,7 +89,7 @@ datasources:
 DS
 
 # Grafana 관리자 비밀번호는 Secrets Manager에서 읽어 .env에만 둔다(디스크에 600)
-GRAFANA_PASSWORD="$(aws secretsmanager get-secret-value --region ${region} --secret-id ${grafana_secret_id} --query SecretString --output text)"
+GRAFANA_PASSWORD="$(retry aws secretsmanager get-secret-value --region ${region} --secret-id ${grafana_secret_id} --query SecretString --output text)"
 umask 077
 cat > "$${BASE}/.env" <<ENV
 GF_SECURITY_ADMIN_PASSWORD=$${GRAFANA_PASSWORD}
@@ -125,5 +135,6 @@ services:
 COMPOSE
 
 cd "$${BASE}"
+retry docker compose pull
 docker compose up -d
 echo "monitoring bootstrap done"

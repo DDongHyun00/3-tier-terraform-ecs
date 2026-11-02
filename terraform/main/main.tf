@@ -140,4 +140,6 @@ module "monitoring" {
   region          = var.region
   subnet_id       = module.network_monitoring.private_subnet_ids[0]
   target_asg_name = module.compute.asg_name
+
+  network_egress_dependency_ids = module.network_monitoring.private_egress_dependency_ids
 }
