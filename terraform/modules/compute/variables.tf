@@ -157,3 +157,33 @@ variable "network_egress_dependency_ids" {
   type        = list(string)
   default     = []
 }
+
+# ---------- 지표 에이전트 (E11 #93, DEC-56) ----------
+variable "enable_metrics_agents" {
+  description = "node_exporter·cAdvisor 데몬 서비스를 띄울지. 관제(Prometheus)가 없는 환경(스테이징 등)은 false"
+  type        = bool
+  default     = true
+}
+
+variable "node_exporter_port" {
+  description = "node_exporter 호스트 포트(host 모드). 관제 SG 규칙(monitoring 모듈)과 같아야 한다"
+  type        = number
+  default     = 9100
+}
+
+variable "cadvisor_port" {
+  description = "cAdvisor 호스트 포트(bridge 8081 → 컨테이너 8080). 관제 SG 규칙과 같아야 한다"
+  type        = number
+  default     = 8081
+}
+
+# 운영 인스턴스는 x86(t3.small, DEC-50). 두 이미지 모두 amd64 빌드가 있다
+variable "node_exporter_image" {
+  type    = string
+  default = "prom/node-exporter:v1.8.1"
+}
+
+variable "cadvisor_image" {
+  type    = string
+  default = "gcr.io/cadvisor/cadvisor:v0.49.1"
+}
