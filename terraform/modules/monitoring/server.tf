@@ -65,6 +65,41 @@ data "aws_iam_policy_document" "server" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [aws_secretsmanager_secret.grafana_admin.arn]
   }
+
+  # Grafana 알림 → 기존 알람 토픽(DEC-58, #95)
+  statement {
+    sid       = "PublishAlertsToTopic"
+    actions   = ["sns:Publish", "sns:GetTopicAttributes"]
+    resources = [var.alarm_topic_arn]
+  }
+
+  # 토픽이 KMS로 암호화돼 게시자에게 키 권한이 필요하다. SNS를 거친 호출만, 키는 boundary가 alerts 키로 한정한다
+  statement {
+    sid       = "AlertTopicKeyViaSns"
+    actions   = ["kms:GenerateDataKey*", "kms:Decrypt"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["sns.${var.region}.amazonaws.com"]
+    }
+  }
+
+  # Grafana CloudWatch 데이터 소스(ALB·RDS 패널). 읽기 API라 리소스 수준 권한이 없다
+  statement {
+    sid = "CloudWatchRead"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmsForMetric",
+      "cloudwatch:DescribeAlarmHistory",
+      "tag:GetResources",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "server" {
@@ -120,7 +155,8 @@ resource "aws_instance" "server" {
     tags                  = { Name = "${var.name_prefix}-prometheus-root" }
   }
 
-  user_data = templatefile("${path.module}/templates/user_data.sh.tftpl", {
+  # 대시보드·알림 설정까지 넣으면 16 KB 상한에 가까워 gzip으로 보낸다(cloud-init이 풀어서 실행한다)
+  user_data_base64 = base64gzip(templatefile("${path.module}/templates/user_data.sh.tftpl", {
     region              = var.region
     grafana_secret_id   = aws_secretsmanager_secret.grafana_admin.name
     prometheus_image    = var.prometheus_image
@@ -134,7 +170,15 @@ resource "aws_instance" "server" {
     app_metrics_port    = var.app_metrics_port
     node_exporter_port  = var.node_exporter_port
     cadvisor_port       = var.cadvisor_port
-  })
+    dashboard_json      = file("${path.module}/templates/grafana/dashboard.json")
+    alerting_yaml = templatefile("${path.module}/templates/grafana/alerting.yaml.tftpl", {
+      alarm_topic_arn      = var.alarm_topic_arn
+      region               = var.region
+      app_cpu_reservation  = var.app_cpu_reservation
+      cpu_warning_percent  = var.cpu_warning_percent
+      cpu_critical_percent = var.cpu_critical_percent
+    })
+  }))
   user_data_replace_on_change = true
 
   tags = { Name = "${var.name_prefix}-prometheus" }

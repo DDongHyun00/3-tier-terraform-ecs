@@ -24,7 +24,8 @@ chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 
 # ---------- 설정 파일 ----------
 BASE=/opt/monitoring
-mkdir -p "$${BASE}/prometheus" "$${BASE}/grafana/provisioning/datasources" "$${BASE}/data/prometheus" "$${BASE}/data/grafana"
+mkdir -p "$${BASE}/prometheus" "$${BASE}/grafana/provisioning/datasources" "$${BASE}/grafana/provisioning/dashboards" \
+  "$${BASE}/grafana/provisioning/alerting" "$${BASE}/grafana/dashboards" "$${BASE}/data/prometheus" "$${BASE}/data/grafana"
 chown -R 65534:65534 "$${BASE}/data/prometheus"   # prom/prometheus는 nobody(65534)로 돈다
 chown -R 472:0 "$${BASE}/data/grafana"            # grafana/grafana는 UID 472
 
@@ -87,15 +88,44 @@ scrape_configs:
         target_label: az
 PROM
 
-cat > "$${BASE}/grafana/provisioning/datasources/prometheus.yml" <<'DS'
+# uid를 고정해 대시보드·알림 규칙이 이름 대신 uid로 참조한다. CloudWatch는 인스턴스 역할(기본 자격 증명 체인)로 읽는다(#95)
+cat > "$${BASE}/grafana/provisioning/datasources/datasources.yml" <<'DS'
 apiVersion: 1
 datasources:
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://localhost:9090
     isDefault: true
+    jsonData:
+      timeInterval: ${scrape_interval}
+  - name: CloudWatch
+    uid: cloudwatch
+    type: cloudwatch
+    jsonData:
+      authType: default
+      defaultRegion: ${region}
 DS
+
+cat > "$${BASE}/grafana/provisioning/dashboards/provider.yml" <<'DP'
+apiVersion: 1
+providers:
+  - name: 3tier
+    folder: 3tier
+    type: file
+    disableDeletion: true
+    options:
+      path: /var/lib/grafana-dashboards
+DP
+
+cat > "$${BASE}/grafana/dashboards/overview.json" <<'DASH'
+${dashboard_json}
+DASH
+
+cat > "$${BASE}/grafana/provisioning/alerting/alerting.yml" <<'ALERT'
+${alerting_yaml}
+ALERT
 
 # Grafana 관리자 비밀번호는 Secrets Manager에서 읽어 .env에만 둔다(디스크에 600)
 GRAFANA_PASSWORD="$(retry aws secretsmanager get-secret-value --region ${region} --secret-id ${grafana_secret_id} --query SecretString --output text)"
@@ -130,6 +160,7 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana-dashboards:ro
       - ./data/grafana:/var/lib/grafana
 
   node-exporter:

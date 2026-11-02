@@ -146,4 +146,7 @@ module "monitoring" {
   # 앱 지표(#94): Cloud Map 존을 관제 VPC에 연결하고 그 이름으로 수집
   app_discovery_zone_id  = module.compute.app_discovery_zone_id
   app_discovery_dns_name = module.compute.app_discovery_dns_name
+
+  # Grafana 알림 → 기존 알람 토픽 → Slack(#95)
+  alarm_topic_arn = data.aws_sns_topic.alarms.arn
 }
