@@ -79,3 +79,12 @@ output "nat_gateway_ids" {
     monitoring = module.network_monitoring.nat_gateway_id
   }
 }
+
+output "monitoring_server_instance_id" {
+  description = "관제 서버. aws ssm start-session --target <이 값> --document-name AWS-StartPortForwardingSession --parameters portNumber=3000,localPortNumber=3000"
+  value       = module.monitoring.server_instance_id
+}
+
+output "grafana_admin_secret_name" {
+  value = module.monitoring.grafana_admin_secret_name
+}

@@ -135,4 +135,9 @@ module "monitoring" {
   target_instance_security_group_id = module.compute.instance_security_group_id
   target_app_security_group_id      = module.network.app_security_group_id
   peering_dependency_ids            = module.peering_monitoring_prod.route_ids
+
+  # 관제 서버(#92, DEC-54·55·57·59)
+  region          = var.region
+  subnet_id       = module.network_monitoring.private_subnet_ids[0]
+  target_asg_name = module.compute.asg_name
 }

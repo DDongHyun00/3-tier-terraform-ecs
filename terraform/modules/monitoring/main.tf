@@ -1,4 +1,4 @@
-# 관제(Prometheus·Grafana). E11 #91에서는 Prometheus SG와 수집 포트 규칙만, #92에서 서버를 더한다.
+# 관제(Prometheus·Grafana). 이 파일은 SG와 수집 포트 규칙(#91), 서버는 server.tf(#92).
 # 설계: E11 설계 4·5절, DEC-55·56.
 
 # 피어링 경로가 생긴 뒤에 SG 참조 규칙을 만든다. 피어링된 VPC의 SG를 참조하는 규칙은 피어링이 active여야 만들어진다.
