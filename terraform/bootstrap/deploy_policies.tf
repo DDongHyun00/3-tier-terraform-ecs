@@ -132,6 +132,42 @@ data "aws_iam_policy_document" "ecs_boundary" {
     ]
     resources = ["*"]
   }
+
+  # ---- 관제 서버 역할(3tier-prod-mon-*, E11)의 상한. 실제 권한은 main의 역할 정책이 정한다 ----
+  # Prometheus ec2_sd_configs가 수집 대상 인스턴스를 찾는다(DEC-55). 조회는 리소스 수준 권한이 없어 *
+  statement {
+    sid       = "MonitoringDiscoverInstances"
+    actions   = ["ec2:DescribeInstances", "ec2:DescribeAvailabilityZones"]
+    resources = ["*"]
+  }
+
+  # Grafana 알림 → 기존 알람 토픽(DEC-58, #95). 토픽이 KMS로 암호화돼 게시자에게 키 권한이 필요하다
+  statement {
+    sid       = "MonitoringAlertPublish"
+    actions   = ["sns:Publish", "sns:GetTopicAttributes"]
+    resources = ["arn:aws:sns:${local.region}:${local.account}:${local.main_prefix}-*"]
+  }
+
+  statement {
+    sid       = "MonitoringAlertTopicKey"
+    actions   = ["kms:GenerateDataKey*", "kms:Decrypt"]
+    resources = [aws_kms_key.alerts.arn]
+  }
+
+  # Grafana CloudWatch 데이터 소스(ALB·RDS 지표, #95). 읽기 작업은 리소스 수준 권한이 없어 *
+  statement {
+    sid = "MonitoringCloudWatchRead"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmsForMetric",
+      "cloudwatch:DescribeAlarmHistory",
+      "tag:GetResources",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "ecs_boundary" {
@@ -855,6 +891,88 @@ data "aws_iam_policy_document" "deploy_observability" {
 }
 
 # ---------- 정책 생성과 부착 ----------
+# ---------- 6. E11 네트워크·관제 서버 (#111) ----------
+# 관제 VPC·피어링(#91), 리전 NAT(DEC-41), S3 게이트웨이 엔드포인트, 관제 서버 단독 인스턴스(#92).
+# network 정책에 넣지 않고 나눈 이유: 관리형 정책 크기 상한(6,144자)과 E11 변경을 한 묶음으로 되돌릴 수 있게 하려고.
+locals {
+  e11_ec2_arns = [
+    for type in ["vpc", "vpc-peering-connection", "vpc-endpoint", "route-table", "natgateway", "elastic-ip"] :
+    "arn:aws:ec2:${local.region}:${local.account}:${type}/*"
+  ]
+}
+
+data "aws_iam_policy_document" "deploy_network_e11" {
+  # 피어링 생성·수락. 같은 계정·리전이라 aws_vpc_peering_connection(auto_accept)이 두 작업을 함께 부른다
+  statement {
+    sid = "VpcPeeringCreateAndAccept"
+    actions = [
+      "ec2:CreateVpcPeeringConnection",
+      "ec2:AcceptVpcPeeringConnection",
+      "ec2:ModifyVpcPeeringConnectionOptions",
+    ]
+    resources = local.e11_ec2_arns
+  }
+
+  # S3 게이트웨이 엔드포인트. 생성 때 라우트 테이블에 경로를 넣는다
+  statement {
+    sid       = "VpcEndpointCreateAndChange"
+    actions   = ["ec2:CreateVpcEndpoint", "ec2:ModifyVpcEndpoint"]
+    resources = local.e11_ec2_arns
+  }
+
+  # 리전 NAT 수동 모드: AZ별 EIP 연결·해제(availability_zone_address)
+  statement {
+    sid       = "RegionalNatAddress"
+    actions   = ["ec2:AssociateNatGatewayAddress", "ec2:DisassociateNatGatewayAddress"]
+    resources = local.e11_ec2_arns
+  }
+
+  # 삭제는 이 프로젝트 태그가 붙은 것만
+  statement {
+    sid       = "E11DeleteProjectOnly"
+    actions   = ["ec2:DeleteVpcPeeringConnection", "ec2:DeleteVpcEndpoints"]
+    resources = local.e11_ec2_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "E11TagOnCreate"
+    actions   = ["ec2:CreateTags"]
+    resources = local.e11_ec2_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values   = ["CreateVpcPeeringConnection", "CreateVpcEndpoint"]
+    }
+  }
+
+  # 관제 서버는 ASG가 아닌 단독 인스턴스라 배포 역할이 직접 종료한다(RunInstances는 compute-ec2 정책에 있다)
+  statement {
+    sid       = "Ec2InstanceProjectOnly"
+    actions   = ["ec2:TerminateInstances", "ec2:ModifyInstanceAttribute", "ec2:StopInstances", "ec2:StartInstances"]
+    resources = ["arn:aws:ec2:${local.region}:${local.account}:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # AL2023 arm64 AMI ID 조회(공개 파라미터, DEC-54)
+  statement {
+    sid       = "SsmAl2023AmiParameter"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:aws:ssm:${local.region}::parameter/aws/service/ami-amazon-linux-latest/*"]
+  }
+}
+
 locals {
   deploy_policies = {
     state-ecr     = data.aws_iam_policy_document.deploy_state_ecr.json
@@ -863,6 +981,7 @@ locals {
     data          = data.aws_iam_policy_document.deploy_data.json
     observability = data.aws_iam_policy_document.deploy_observability.json
     compute-ec2   = data.aws_iam_policy_document.deploy_compute_ec2.json
+    network-e11   = data.aws_iam_policy_document.deploy_network_e11.json
   }
 }
 
