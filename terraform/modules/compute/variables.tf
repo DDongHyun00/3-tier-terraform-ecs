@@ -152,8 +152,8 @@ variable "root_volume_size" {
   default     = 30
 }
 
-variable "network_egress_route_ids" {
-  description = "사설 서브넷의 기본 경로 ID 목록(NAT). 값 자체는 쓰지 않고 의존 관계에만 쓴다. destroy 때 NAT가 먼저 지워지면 사설 서브넷 인스턴스의 ECS agent가 태스크 정지를 보고하지 못해 서비스가 DRAINING에 고착된다(11/02, #108)"
+variable "network_egress_dependency_ids" {
+  description = "사설 서브넷의 인터넷 경로를 이루는 리소스 ID 목록(사설 기본 경로·라우트 테이블 연결·퍼블릭 기본 경로·퍼블릭 연결). 값 자체는 쓰지 않고 의존 관계에만 쓴다. destroy 때 NAT가 먼저 지워지면 사설 서브넷 인스턴스의 ECS agent가 태스크 정지를 보고하지 못해 서비스가 DRAINING에 고착된다(11/02, #108)"
   type        = list(string)
   default     = []
 }

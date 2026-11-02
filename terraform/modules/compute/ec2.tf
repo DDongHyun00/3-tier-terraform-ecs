@@ -81,11 +81,11 @@ resource "aws_launch_template" "ecs" {
   }
 }
 
-# 사설 서브넷의 NAT 경로에 대한 의존 관계만 표현하는 자리표. ECS 서비스와 ASG가 이것에 depends_on 하면
+# 사설 서브넷의 인터넷 경로(NAT·라우트·연결) 전체에 대한 의존 관계만 표현하는 자리표. ECS 서비스와 ASG가 이것에 depends_on 하면
 # apply 때는 NAT 경로가 먼저 만들어지고, destroy 때는 서비스·ASG(태스크 정지·인스턴스 종료 보고)가 끝난 뒤에 NAT가 지워진다.
 # 모듈 전체 depends_on을 쓰지 않는 이유: AMI 데이터 소스까지 apply로 미뤄져 시작 템플릿에 매번 변경이 뜬다.
 resource "terraform_data" "network_egress" {
-  input = var.network_egress_route_ids
+  input = var.network_egress_dependency_ids
 }
 
 resource "aws_autoscaling_group" "ecs" {

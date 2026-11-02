@@ -64,8 +64,8 @@ module "compute" {
   alb_security_group_id = module.network.alb_security_group_id
   app_security_group_id = module.network.app_security_group_id
 
-  # destroy 순서: 서비스·ASG가 NAT 경로보다 먼저 지워지게(#108)
-  network_egress_route_ids = module.network.private_nat_route_ids
+  # destroy 순서: 서비스·ASG가 사설 서브넷의 인터넷 경로(NAT·라우트·연결)보다 먼저 지워지게(#108)
+  network_egress_dependency_ids = module.network.private_egress_dependency_ids
 
   image  = "${data.aws_ecr_repository.board.repository_url}:${data.aws_ecr_image.board_latest.image_tags[0]}"
   db_url = "jdbc:postgresql://${module.data.db_endpoint}:${module.data.db_port}/${module.data.db_name}"

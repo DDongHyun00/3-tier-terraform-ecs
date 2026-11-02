@@ -49,7 +49,7 @@ Fargate 때는 같은 destroy 순서였지만 태스크 정지를 Fargate 제어
 ## 재발 방지
 
 이 PR(#108)에서 한 것:
-- 네트워크 모듈이 사설 서브넷의 기본 경로(`aws_route.private_nat`) ID를 출력하고, compute 모듈이 그것을 받아 `terraform_data.network_egress`에 묶은 뒤 ECS 서비스와 ASG가 그것에 `depends_on` 한다. apply 때는 NAT 경로가 먼저 만들어지고, destroy 때는 서비스·ASG가 끝난 뒤 NAT가 지워진다. 모듈 전체 `depends_on`은 AMI 데이터 소스까지 apply로 미뤄져 시작 템플릿에 매번 변경이 뜨므로 쓰지 않았다.
+- 네트워크 모듈이 사설 서브넷의 인터넷 경로를 이루는 리소스(사설 기본 경로 → NAT, 사설 라우트 테이블 연결, 퍼블릭 기본 경로 → IGW, 퍼블릭 라우트 테이블 연결) ID를 출력하고, compute 모듈이 그것을 받아 `terraform_data.network_egress`에 묶은 뒤 ECS 서비스와 ASG가 그것에 `depends_on` 한다. 처음엔 NAT 경로만 넣었는데, 검토에서 라우트 테이블 연결이나 퍼블릭 경로가 먼저 지워져도 같은 증상이 난다는 지적을 받아 경로 전체로 넓혔다. apply 때는 NAT 경로가 먼저 만들어지고, destroy 때는 서비스·ASG가 끝난 뒤 NAT가 지워진다. 모듈 전체 `depends_on`은 AMI 데이터 소스까지 apply로 미뤄져 시작 템플릿에 매번 변경이 뜨므로 쓰지 않았다.
 - 검증은 다음 AWS 세션에서 한다: apply 뒤 destroy 1회 성공, STOPPING 태스크 0, 소요 시간.
 
 남긴 것:
