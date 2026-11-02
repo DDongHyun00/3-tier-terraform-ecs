@@ -139,5 +139,5 @@ resource "aws_ecs_service" "app" {
   }
 
   # 리스너가 타깃 그룹에 붙기 전에 서비스를 만들면 실패한다. 용량 공급자가 클러스터에 붙은 뒤에 만든다(destroy는 반대 순서)
-  depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this]
+  depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress]
 }
