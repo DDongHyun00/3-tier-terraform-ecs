@@ -24,19 +24,28 @@ output "db_subnet_ids" {
 }
 
 output "alb_security_group_id" {
-  value = aws_security_group.alb.id
+  description = "create_tier_security_groups = false면 null"
+  value       = one(aws_security_group.alb[*].id)
 }
 
 output "app_security_group_id" {
-  value = aws_security_group.app.id
+  description = "create_tier_security_groups = false면 null"
+  value       = one(aws_security_group.app[*].id)
 }
 
 output "db_security_group_id" {
-  value = aws_security_group.db.id
+  description = "create_tier_security_groups = false면 null"
+  value       = one(aws_security_group.db[*].id)
 }
 
-output "nat_gateway_ids" {
-  value = aws_nat_gateway.this[*].id
+output "nat_gateway_id" {
+  description = "리전 NAT 또는 영역 NAT 하나의 ID"
+  value       = local.nat_id
+}
+
+output "private_route_table_ids" {
+  description = "사설 라우트 테이블(AZ순). 피어링 경로를 넣는 곳"
+  value       = aws_route_table.private[*].id
 }
 
 output "private_egress_dependency_ids" {

@@ -46,3 +46,8 @@ output "capacity_provider_name" {
   description = "ECS 용량 공급자 이름"
   value       = aws_ecs_capacity_provider.ec2.name
 }
+
+output "instance_security_group_id" {
+  description = "컨테이너 인스턴스 SG. 관제 VPC의 Prometheus가 node_exporter·cAdvisor 포트로 들어온다(#91)"
+  value       = aws_security_group.ecs_instance.id
+}
