@@ -891,8 +891,9 @@ data "aws_iam_policy_document" "deploy_observability" {
 }
 
 # ---------- 정책 생성과 부착 ----------
-# ---------- 6. E11 네트워크·관제 서버 (#111) ----------
-# 관제 VPC·피어링(#91), 리전 NAT(DEC-41), S3 게이트웨이 엔드포인트, 관제 서버 단독 인스턴스(#92).
+# ---------- 6. E11 네트워크·관제 (#111) ----------
+# 관제 VPC·피어링(#91), 리전 NAT(DEC-41), S3 게이트웨이 엔드포인트, 관제 서버 단독 인스턴스(#92),
+# 앱 지표 탐색 Cloud Map·지표 경로 차단 리스너 규칙(#94).
 # network 정책에 넣지 않고 나눈 이유: 관리형 정책 크기 상한(6,144자)과 E11 변경을 한 묶음으로 되돌릴 수 있게 하려고.
 locals {
   e11_ec2_arns = [
@@ -984,6 +985,71 @@ data "aws_iam_policy_document" "deploy_network_e11" {
     sid       = "SsmAl2023AmiParameter"
     actions   = ["ssm:GetParameter", "ssm:GetParameters"]
     resources = ["arn:aws:ssm:${local.region}::parameter/aws/service/ami-amazon-linux-latest/*"]
+  }
+
+  # 앱 태스크 지표 탐색용 Cloud Map 비공개 DNS 네임스페이스·서비스(DEC-55, #94).
+  # 네임스페이스 생성 때 Cloud Map이 호출자 권한으로 Route 53 비공개 호스팅 존을 만든다(Cloud Map API 권한 참조)
+  statement {
+    sid = "CloudMapNamespaceAndService"
+    actions = [
+      "servicediscovery:CreatePrivateDnsNamespace",
+      "servicediscovery:DeleteNamespace",
+      "servicediscovery:GetNamespace",
+      "servicediscovery:CreateService",
+      "servicediscovery:DeleteService",
+      "servicediscovery:GetService",
+      "servicediscovery:UpdateService",
+      "servicediscovery:GetOperation",
+      "servicediscovery:ListNamespaces",
+      "servicediscovery:ListServices",
+      "servicediscovery:ListOperations",
+      "servicediscovery:TagResource",
+      "servicediscovery:UntagResource",
+      "servicediscovery:ListTagsForResource",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [local.region]
+    }
+  }
+
+  # 네임스페이스의 비공개 호스팅 존 생성·조회와, 관제 VPC에서도 그 이름을 풀게 하는 VPC 연결(DEC-55).
+  # 존 ID는 생성 뒤에 정해져 hostedzone/*로 둔다. 공개 존(3tier.link)의 레코드 변경 권한은 compute 정책 그대로다
+  statement {
+    sid       = "Route53PrivateZoneCreate"
+    actions   = ["route53:CreateHostedZone", "route53:ListHostedZonesByName"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "Route53PrivateZoneVpc"
+    actions = [
+      "route53:GetHostedZone",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+      "route53:ListTagsForResource",
+    ]
+    resources = ["arn:aws:route53:::hostedzone/*"]
+  }
+
+  # /actuator/prometheus를 ALB에서 막는 리스너 규칙(#94). Prometheus는 피어링으로 태스크에 직접 붙는다
+  statement {
+    sid = "ElbListenerRules"
+    actions = [
+      "elasticloadbalancing:CreateRule",
+      "elasticloadbalancing:DeleteRule",
+      "elasticloadbalancing:ModifyRule",
+      "elasticloadbalancing:SetRulePriorities",
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:RemoveTags",
+    ]
+    resources = [
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener/app/${local.main_prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener-rule/app/${local.main_prefix}-*",
+    ]
   }
 }
 
