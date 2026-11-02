@@ -1000,6 +1000,9 @@ data "aws_iam_policy_document" "deploy_network_e11" {
       "servicediscovery:GetService",
       "servicediscovery:UpdateService",
       "servicediscovery:GetOperation",
+      "servicediscovery:ListInstances",
+      "servicediscovery:GetInstance",
+      "servicediscovery:DeregisterInstance",
       "servicediscovery:ListNamespaces",
       "servicediscovery:ListServices",
       "servicediscovery:ListOperations",
@@ -1014,6 +1017,14 @@ data "aws_iam_policy_document" "deploy_network_e11" {
       variable = "aws:RequestedRegion"
       values   = [local.region]
     }
+  }
+
+  # destroy 때 등록이 남은 Cloud Map 서비스를 지우려면(force_destroy) 인스턴스 등록 해제를 부른다.
+  # Cloud Map API 권한 참조상 DeregisterInstance는 Route 53 헬스 체크 조회·삭제·수정도 요구한다(헬스 체크는 쓰지 않는다)
+  statement {
+    sid       = "Route53HealthCheckForCloudMap"
+    actions   = ["route53:GetHealthCheck", "route53:DeleteHealthCheck", "route53:UpdateHealthCheck"]
+    resources = ["arn:aws:route53:::healthcheck/*"]
   }
 
   # 네임스페이스의 비공개 호스팅 존 생성·조회와, 관제 VPC에서도 그 이름을 풀게 하는 VPC 연결(DEC-55).
