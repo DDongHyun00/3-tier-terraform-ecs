@@ -32,6 +32,14 @@ class ActuatorPrometheusTests {
 		return http.send(request, HttpResponse.BodyHandlers.ofString());
 	}
 
+	private HttpResponse<String> getViaProxy(String path) throws Exception {
+		// ALB를 거친 요청처럼 X-Forwarded-For를 붙인다
+		HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+				.header("X-Forwarded-For", "203.0.113.10")
+				.GET().build();
+		return http.send(request, HttpResponse.BodyHandlers.ofString());
+	}
+
 	@Test
 	void prometheusEndpointExposesJvmHttpAndHikariMetrics() throws Exception {
 		// http_server_requests를 만들려고 공개 경로를 먼저 한 번 부른다
@@ -45,6 +53,14 @@ class ActuatorPrometheusTests {
 				.contains("http_server_requests_seconds_bucket")
 				.contains("hikaricp_connections_active")
 				.contains("application=\"board\"");
+	}
+
+	@Test
+	void prometheusEndpointRejectsRequestsThatCameThroughTheLoadBalancer() throws Exception {
+		HttpResponse<String> response = getViaProxy("/actuator/prometheus");
+
+		assertThat(response.statusCode()).isNotEqualTo(200);
+		assertThat(response.body()).doesNotContain("jvm_memory_used_bytes");
 	}
 
 	@Test

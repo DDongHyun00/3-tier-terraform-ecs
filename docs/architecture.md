@@ -171,7 +171,7 @@ flowchart LR
 - 소스를 CIDR이 아니라 **SG 참조**로 적습니다. 태스크 IP는 재배포마다 바뀌지만 SG는 바뀌지 않습니다.
 - app의 아웃바운드 443은 NAT를 통한 AWS API 호출(ECR, Secrets Manager, CloudWatch, S3)용입니다. AWS API는 모두 443이므로 포트를 이것으로 좁힙니다.
 - **관제 수집 규칙(E11 #91)**: 관제 VPC의 `3tier-prod-mon-sg-prometheus`는 인바운드가 없고(접속은 SSM 포트 포워딩, DEC-57), 아웃바운드는 운영 컨테이너 인스턴스 SG의 9100(node_exporter)·8081(cAdvisor), app SG의 8080(`/actuator/prometheus`), 그리고 443(이미지·패키지·AWS API)만 엽니다. 대상 쪽(인스턴스 SG·app SG)은 그 포트를 Prometheus SG 참조로만 엽니다. 피어링된 같은 리전 VPC끼리는 SG를 서로 참조할 수 있어 IP 대역 대신 SG로 좁혔습니다.
-- **앱 지표 경로(E11 #94)**: 앱은 `/actuator/prometheus`를 인증 없이 열어 두지만(health와 함께 노출 목록 두 개뿐), ALB HTTPS 리스너 규칙(우선순위 10)이 이 경로를 404로 돌려줘 인터넷에서는 보이지 않습니다. Prometheus는 피어링으로 태스크 8080에 직접 붙고, 태스크 IP는 Cloud Map 비공개 DNS `board.3tier-prod.internal`(A 레코드, ECS가 등록·해제)로 찾습니다. 비공개 존은 연결된 VPC에서만 풀리고 피어링은 DNS를 넘겨주지 않아, 존에 관제 VPC를 따로 연결했습니다(DEC-55).
+- **앱 지표 경로(E11 #94)**: `/actuator/prometheus`는 세 겹으로 막습니다. ① ALB HTTPS 리스너 규칙(우선순위 10)이 404를 돌려주고, ② 앱이 `X-Forwarded-For`가 붙은 요청(ALB를 거친 요청에는 ALB가 항상 붙임)을 거부하며, ③ 앱 SG가 8080을 ALB와 관제 Prometheus에만 엽니다. ②가 있어 앱 배포가 ALB 규칙보다 먼저 끝나도 공개되지 않습니다. Prometheus는 피어링으로 태스크 8080에 직접 붙고, 태스크 IP는 Cloud Map 비공개 DNS `board.3tier-prod.internal`(A 레코드, ECS가 등록·해제)로 찾습니다. 비공개 존은 연결된 VPC에서만 풀리고 피어링은 DNS를 넘겨주지 않아, 존에 관제 VPC를 따로 연결했습니다(DEC-55).
 - db의 아웃바운드는 비워 둡니다. DB가 먼저 연결을 시작할 일이 없습니다.
 - 80은 HTTPS 리다이렉트를 위해서만 열고, ALB 리스너가 301로 돌려보냅니다.
 

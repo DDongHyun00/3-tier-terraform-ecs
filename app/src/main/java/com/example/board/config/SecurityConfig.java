@@ -38,8 +38,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 헬스체크 (비로그인, 302 없이 200이어야 함). ALB는 DB 상태와 무관한 /actuator/health/liveness를 본다
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                        // Prometheus 수집(#94). 인증 없이 열지만 ALB가 이 경로를 404로 막고, 앱 SG가 관제 Prometheus만 8080으로 들인다
-                        .requestMatchers("/actuator/prometheus").permitAll()
+                        // Prometheus 수집(#94). 관제 Prometheus는 피어링으로 태스크에 직접 붙어 X-Forwarded-For가 없다.
+                        // ALB를 거친 요청에는 ALB가 항상 X-Forwarded-For를 붙이므로, 그 헤더가 있으면 거부한다.
+                        // ALB 리스너 규칙(404)·앱 SG와 별개로 앱 스스로 막는 층이라, 배포 순서와 상관없이 공개되지 않는다
+                        .requestMatchers(request -> "/actuator/prometheus".equals(request.getRequestURI())
+                                && request.getHeader("X-Forwarded-For") == null).permitAll()
+                        .requestMatchers("/actuator/prometheus", "/actuator/prometheus/**").denyAll()
 
                         // 전체 공개
                         .requestMatchers("/", "/login", "/signup",

@@ -144,5 +144,6 @@ resource "aws_ecs_service" "app" {
   }
 
   # 리스너가 타깃 그룹에 붙기 전에 서비스를 만들면 실패한다. 용량 공급자가 클러스터에 붙은 뒤에 만든다(destroy는 반대 순서)
-  depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress]
+  # 지표 경로 차단 규칙(#94)이 있은 뒤에 태스크가 ALB 뒤로 들어가게 한다(새로 만들 때)
+  depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener_rule.block_metrics, aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress]
 }
