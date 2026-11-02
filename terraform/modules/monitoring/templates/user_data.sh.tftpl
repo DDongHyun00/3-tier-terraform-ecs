@@ -61,6 +61,15 @@ scrape_configs:
       - source_labels: [__meta_ec2_availability_zone]
         target_label: az
 
+  # 운영 앱 태스크(JVM·HTTP·Hikari, #94). Cloud Map A 레코드로 태스크 IP를 찾는다(DEC-55)
+  - job_name: app
+    metrics_path: /actuator/prometheus
+    dns_sd_configs:
+      - names: ["${app_dns_name}"]
+        type: A
+        port: ${app_metrics_port}
+        refresh_interval: 30s
+
   # 운영 ECS 컨테이너 인스턴스(컨테이너 지표, cAdvisor)
   - job_name: cadvisor-ecs
     ec2_sd_configs:

@@ -38,6 +38,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 헬스체크 (비로그인, 302 없이 200이어야 함). ALB는 DB 상태와 무관한 /actuator/health/liveness를 본다
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        // Prometheus 수집(#94). 인증 없이 열지만 ALB가 이 경로를 404로 막고, 앱 SG가 관제 Prometheus만 8080으로 들인다
+                        .requestMatchers("/actuator/prometheus").permitAll()
 
                         // 전체 공개
                         .requestMatchers("/", "/login", "/signup",

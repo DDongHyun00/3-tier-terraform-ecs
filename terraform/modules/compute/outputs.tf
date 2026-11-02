@@ -51,3 +51,13 @@ output "instance_security_group_id" {
   description = "컨테이너 인스턴스 SG. 관제 VPC의 Prometheus가 node_exporter·cAdvisor 포트로 들어온다(#91)"
   value       = aws_security_group.ecs_instance.id
 }
+
+output "app_discovery_dns_name" {
+  description = "앱 태스크 A 레코드 이름(Cloud Map). Prometheus dns_sd_configs 대상"
+  value       = "${aws_service_discovery_service.app.name}.${aws_service_discovery_private_dns_namespace.app.name}"
+}
+
+output "app_discovery_zone_id" {
+  description = "Cloud Map 네임스페이스의 비공개 호스팅 존. 관제 VPC를 연결해 이름을 풀게 한다"
+  value       = aws_service_discovery_private_dns_namespace.app.hosted_zone
+}

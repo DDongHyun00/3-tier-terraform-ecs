@@ -112,3 +112,26 @@ resource "aws_route53_record" "app" {
     evaluate_target_health = true
   }
 }
+
+# /actuator/prometheus는 ALB로 공개하지 않는다(#94). 관제 VPC의 Prometheus는 피어링으로 태스크 8080에 직접 붙는다.
+# 앱은 이 경로를 인증 없이 열어 두므로(SecurityConfig) 공개 경로에서 막는 이 규칙이 필요하다
+resource "aws_lb_listener_rule" "block_metrics" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+
+  condition {
+    path_pattern {
+      values = ["/actuator/prometheus", "/actuator/prometheus/*"]
+    }
+  }
+
+  action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not Found"
+      status_code  = "404"
+    }
+  }
+}

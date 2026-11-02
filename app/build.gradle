@@ -37,6 +37,8 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// /actuator/prometheus(E11 #94). 관제 VPC의 Prometheus가 피어링으로 태스크에 직접 수집한다
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	implementation platform('software.amazon.awssdk:bom:2.46.7')
 	implementation 'software.amazon.awssdk:s3'
 	annotationProcessor 'org.projectlombok:lombok'

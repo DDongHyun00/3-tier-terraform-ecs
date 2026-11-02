@@ -89,6 +89,13 @@ resource "terraform_data" "network_egress" {
   input = var.network_egress_dependency_ids
 }
 
+# 운영 VPC의 Cloud Map 비공개 존을 관제 VPC에도 연결해, Prometheus가 앱 태스크 이름을 풀게 한다(#94, DEC-55).
+# 피어링은 DNS를 넘겨주지 않아(비공개 존은 연결된 VPC에서만 보인다) 존에 관제 VPC를 직접 붙인다
+resource "aws_route53_zone_association" "app_discovery" {
+  zone_id = var.app_discovery_zone_id
+  vpc_id  = var.vpc_id
+}
+
 # ---------- 서버 ----------
 resource "aws_instance" "server" {
   ami                    = data.aws_ssm_parameter.al2023_arm64.value
@@ -123,6 +130,8 @@ resource "aws_instance" "server" {
     scrape_interval     = var.scrape_interval
     retention           = var.retention
     target_asg_name     = var.target_asg_name
+    app_dns_name        = var.app_discovery_dns_name
+    app_metrics_port    = var.app_metrics_port
     node_exporter_port  = var.node_exporter_port
     cadvisor_port       = var.cadvisor_port
   })
@@ -137,6 +146,7 @@ resource "aws_instance" "server" {
     aws_iam_role_policy.server,
     aws_vpc_security_group_egress_rule.https_out,
     terraform_data.network_egress,
+    aws_route53_zone_association.app_discovery,
   ]
 
   lifecycle {

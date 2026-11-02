@@ -142,4 +142,8 @@ module "monitoring" {
   target_asg_name = module.compute.asg_name
 
   network_egress_dependency_ids = module.network_monitoring.private_egress_dependency_ids
+
+  # 앱 지표(#94): Cloud Map 존을 관제 VPC에 연결하고 그 이름으로 수집
+  app_discovery_zone_id  = module.compute.app_discovery_zone_id
+  app_discovery_dns_name = module.compute.app_discovery_dns_name
 }
