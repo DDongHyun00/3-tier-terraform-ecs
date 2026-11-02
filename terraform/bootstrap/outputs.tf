@@ -20,3 +20,8 @@ output "hosted_zone_id" {
   description = "Route 53 호스팅 존 ID. ACM DNS 검증과 A 레코드 생성에 쓴다"
   value       = data.aws_route53_zone.main.zone_id
 }
+
+output "fis_db_disrupt_template_id" {
+  description = "DB 서브넷 연결 차단 FIS 실험 템플릿 ID. aws fis start-experiment --experiment-template-id에 쓴다 (#43)"
+  value       = aws_fis_experiment_template.db_disrupt.id
+}
