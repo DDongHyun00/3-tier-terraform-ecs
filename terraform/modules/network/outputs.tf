@@ -38,3 +38,8 @@ output "db_security_group_id" {
 output "nat_gateway_ids" {
   value = aws_nat_gateway.this[*].id
 }
+
+output "private_nat_route_ids" {
+  description = "사설 서브넷의 기본 경로(0.0.0.0/0 → NAT). 사설 서브넷에서 밖으로 나가는 리소스(ECS 서비스·ASG)가 이 경로에 의존하게 해, destroy 때 NAT가 그 리소스들보다 먼저 지워지지 않게 한다"
+  value       = aws_route.private_nat[*].id
+}
