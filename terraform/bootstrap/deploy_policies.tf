@@ -952,6 +952,20 @@ data "aws_iam_policy_document" "deploy_network_e11" {
     }
   }
 
+  # 생성 뒤 태그 변경(Name·default_tags 바뀔 때)은 이 프로젝트 리소스만. network 정책의 Ec2TagProjectOnly에는
+  # 피어링·엔드포인트·인스턴스 ARN이 없어서 따로 둔다
+  statement {
+    sid       = "E11TagProjectOnly"
+    actions   = ["ec2:CreateTags", "ec2:DeleteTags"]
+    resources = concat(local.e11_ec2_arns, ["arn:aws:ec2:${local.region}:${local.account}:instance/*"])
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
   # 관제 서버는 ASG가 아닌 단독 인스턴스라 배포 역할이 직접 종료한다(RunInstances는 compute-ec2 정책에 있다)
   statement {
     sid       = "Ec2InstanceProjectOnly"
