@@ -168,7 +168,7 @@ flowchart LR
 | 항목 | 값 | 이유 |
 |---|---|---|
 | 클러스터 | `3tier-prod-cluster` | Container Insights 켬 |
-| 용량 | EC2 용량 공급자 `3tier-prod-ec2` → ASG `3tier-prod-ecs-asg`(t3.small, 2~4대, 온디맨드, CPU 크레딧 unlimited) | 호스트에 에이전트(node_exporter·cAdvisor·Fluent Bit)를 올리고 태스크·인스턴스 2단계 스케일링을 재기 위해 Fargate에서 전환(DEC-36·DEC-50, #87). Fargate 구성은 git 태그 `v1-fargate` |
+| 용량 | EC2 용량 공급자 `3tier-prod-ec2` → ASG `3tier-prod-ecs-asg`(t3.small, 최소 2·상한 8대, 온디맨드, CPU 크레딧 unlimited) | 호스트에 에이전트(node_exporter·cAdvisor·Fluent Bit)를 올리고 태스크·인스턴스 2단계 스케일링을 재기 위해 Fargate에서 전환(DEC-36·DEC-50, #87). Fargate 구성은 git 태그 `v1-fargate`. 상한 8은 태스크 상한 4의 2배: 인스턴스당 태스크 1개(t3.small 2 GiB에 1 GiB 태스크)라 롤링 배포(최소 100%·최대 200%)가 태스크 4개 상태에서도 멈추지 않게 한 여유다(DEC-51). 평시 대수는 태스크 수를 따른다 |
 | 인스턴스 | ECS 최적화 Amazon Linux 2023(공개 SSM 파라미터로 최신 조회), gp3 30 GB 암호화, IMDSv2만, SSM으로만 접속(SSH 키 없음) | 영구 키 0개 원칙(DEC-14) |
 | 배치 | AZ 분산 → 메모리 binpack. 관리형 스케일링(목표 100%)·관리형 종료 보호·관리형 드레이닝 | t3.small은 네트워크 카드 3개라 awsvpc 태스크가 인스턴스당 최대 2개, 메모리상 1 GB 태스크는 1개 |
 | 태스크 CPU / 메모리 | 0.5 vCPU / 1 GB | 처음엔 0.25 vCPU / 0.5 GB로 잡았으나 AWS에서 기동 120초, 첫 응답 수 초라 올림. 기동 23초로 단축 (E05) |
@@ -298,7 +298,7 @@ terraform/
 
 | 판단 | 선택 | 이유 |
 |---|---|---|
-| 컴퓨트 | ECS on EC2 (t3.small 2~4대) | 처음엔 Fargate(서버 관리 없음). 호스트 관측·에이전트 설치와 2단계 스케일링 측정을 위해 E10에서 전환(DEC-36·DEC-50). EKS는 제어 플레인만 월 73달러라 범위에 과함 |
+| 컴퓨트 | ECS on EC2 (t3.small 2~4대, 배포 중 최대 8대) | 처음엔 Fargate(서버 관리 없음). 호스트 관측·에이전트 설치와 2단계 스케일링 측정을 위해 E10에서 전환(DEC-36·DEC-50). EKS는 제어 플레인만 월 73달러라 범위에 과함 |
 | DB 배치 | DB 서브넷, 외부 경로 없음 | 보안 영역의 기본. 접근은 sg-app에서만 |
 | DB 가용성 | Single-AZ, Multi-AZ는 변수 | 비용. 장애 재현 때 켜서 장애 조치 시간을 측정 |
 | NAT | AZ별 2개 | 기획서의 다중 AZ 기준. 비용 트레이드오프는 리포트에 기록 |

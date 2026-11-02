@@ -141,9 +141,9 @@ variable "asg_min_size" {
 }
 
 variable "asg_max_size" {
-  description = "ASG 최대 인스턴스 수. 서비스 태스크 상한(4)과 맞춘다"
+  description = "ASG 최대 인스턴스 수. 서비스 태스크 상한(4)의 2배. 인스턴스당 태스크 1개라 롤링 배포(최소 100%·최대 200%)가 태스크 4개 상태에서도 새 태스크를 놓을 자리가 있어야 한다. 상한일 뿐 평시 대수는 용량 공급자가 정한다"
   type        = number
-  default     = 4
+  default     = 8
 }
 
 variable "root_volume_size" {
