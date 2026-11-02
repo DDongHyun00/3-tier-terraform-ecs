@@ -19,14 +19,14 @@ resource "aws_cloudwatch_log_group" "app" {
 # 이미지가 바뀌면 새 리비전이 생긴다. 서비스는 task_definition 변경을 무시하므로(ignore_changes) 롤링 배포는 deploy.yml이 한다.
 resource "aws_ecs_task_definition" "app" {
   family                   = "${var.name_prefix}-board"
-  requires_compatibilities = ["FARGATE"]
+  requires_compatibilities = ["EC2"]
   network_mode             = "awsvpc"
   cpu                      = var.task_cpu
   memory                   = var.task_memory
   execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
 
-  # 로컬(x86)에서 빌드한 이미지를 그대로 쓴다. ARM64(Graviton)는 빌드 아키텍처도 맞춰야 한다
+  # x86으로 빌드한 이미지를 그대로 쓴다(t3, DEC-50 D1). ARM64(Graviton)는 빌드 아키텍처도 맞춰야 한다
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = "X86_64"
@@ -81,7 +81,27 @@ resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+
+  # Fargate 대신 EC2 용량 공급자(#87). Fargate 구성은 git 태그 v1-fargate에 남아 있다(DEC-50 D9)
+  capacity_provider_strategy {
+    capacity_provider = aws_ecs_capacity_provider.ec2.name
+    weight            = 1
+    base              = 0
+  }
+
+  # 떠 있는 서비스의 용량 공급자 전략을 바꿀 때 provider가 요구한다(Fargate → EC2 전환). ignore_changes로 평소 apply는 서비스를 건드리지 않는다
+  force_new_deployment = true
+
+  # AZ에 고르게 나눈 뒤, 각 AZ 안에서는 메모리 기준으로 채운다(DEC-50 D4)
+  ordered_placement_strategy {
+    type  = "spread"
+    field = "attribute:ecs.availability-zone"
+  }
+
+  ordered_placement_strategy {
+    type  = "binpack"
+    field = "memory"
+  }
 
   # 롤링: 기존 2개를 유지한 채 새 2개를 띄우고(최대 200%), healthy가 되면 옛것을 뺀다
   deployment_minimum_healthy_percent = 100
@@ -118,6 +138,6 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  # 리스너가 타깃 그룹에 붙기 전에 서비스를 만들면 실패한다
-  depends_on = [aws_lb_listener.https, aws_lb_listener.http]
+  # 리스너가 타깃 그룹에 붙기 전에 서비스를 만들면 실패한다. 용량 공급자가 클러스터에 붙은 뒤에 만든다(destroy는 반대 순서)
+  depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this]
 }

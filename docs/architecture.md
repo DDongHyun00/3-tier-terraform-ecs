@@ -16,8 +16,8 @@ flowchart LR
             NAT[NAT Gateway ×2]
         end
         subgraph PRIV["프라이빗 서브넷 (2a, 2c)"]
-            T1[ECS Fargate<br/>태스크 1]
-            T2[ECS Fargate<br/>태스크 2]
+            T1[ECS on EC2<br/>태스크 1]
+            T2[ECS on EC2<br/>태스크 2]
         end
         subgraph DB["DB 서브넷 (2a, 2c)"]
             RDS[(RDS PostgreSQL 16<br/>Single-AZ)]
@@ -37,7 +37,7 @@ flowchart LR
 | 계층 | 서브넷 | 들어 있는 것 | 외부 접근 |
 |---|---|---|---|
 | 진입 | 퍼블릭 | ALB, NAT Gateway | 인터넷에서 ALB 443/80만 |
-| 앱 | 프라이빗 | ECS Fargate 태스크 | 불가. ALB를 통해서만 |
+| 앱 | 프라이빗 | ECS 태스크(EC2 컨테이너 인스턴스 위, awsvpc) | 불가. ALB를 통해서만 |
 | 데이터 | DB | RDS | 불가. 앱 태스크에서만 |
 
 세 계층을 서브넷과 Security Group으로 나누는 것이 3-Tier의 핵심입니다. DB는 퍼블릭 IP도 없고 인터넷으로 나가는 경로도 없습니다.
@@ -168,6 +168,9 @@ flowchart LR
 | 항목 | 값 | 이유 |
 |---|---|---|
 | 클러스터 | `3tier-prod-cluster` | Container Insights 켬 |
+| 용량 | EC2 용량 공급자 `3tier-prod-ec2` → ASG `3tier-prod-ecs-asg`(t3.small, 최소 2·상한 8대, 온디맨드, CPU 크레딧 unlimited) | 호스트에 에이전트(node_exporter·cAdvisor·Fluent Bit)를 올리고 태스크·인스턴스 2단계 스케일링을 재기 위해 Fargate에서 전환(DEC-36·DEC-50, #87). Fargate 구성은 git 태그 `v1-fargate`. 상한 8은 태스크 상한 4의 2배: 인스턴스당 태스크 1개(t3.small 2 GiB에 1 GiB 태스크)라 롤링 배포(최소 100%·최대 200%)가 태스크 4개 상태에서도 멈추지 않게 한 여유다(DEC-51). 평시 대수는 태스크 수를 따른다 |
+| 인스턴스 | ECS 최적화 Amazon Linux 2023(공개 SSM 파라미터로 최신 조회), gp3 30 GB 암호화, IMDSv2만, SSM으로만 접속(SSH 키 없음) | 영구 키 0개 원칙(DEC-14) |
+| 배치 | AZ 분산 → 메모리 binpack. 관리형 스케일링(목표 100%)·관리형 종료 보호·관리형 드레이닝 | t3.small은 네트워크 카드 3개라 awsvpc 태스크가 인스턴스당 최대 2개, 메모리상 1 GB 태스크는 1개 |
 | 태스크 CPU / 메모리 | 0.5 vCPU / 1 GB | 처음엔 0.25 vCPU / 0.5 GB로 잡았으나 AWS에서 기동 120초, 첫 응답 수 초라 올림. 기동 23초로 단축 (E05) |
 | 원하는 태스크 수 | 2 | AZ마다 1개. 1개면 재배포·장애 시 다운타임 |
 | 오토스케일링 | 최소 2, 최대 4, 목표 추적 CPU 60%, 늘림 쿨다운 60초·줄임 쿨다운 300초 | 서비스 desired_count는 Terraform이 무시한다(오토스케일링 값을 apply가 되돌리지 않게). #40 부하 테스트로 검증 |
@@ -295,7 +298,7 @@ terraform/
 
 | 판단 | 선택 | 이유 |
 |---|---|---|
-| 컴퓨트 | ECS Fargate | 서버 관리 없음. EKS는 제어 플레인만 월 73달러이고 일주일 범위에 과함 |
+| 컴퓨트 | ECS on EC2 (t3.small 2~4대, 배포 중 최대 8대) | 처음엔 Fargate(서버 관리 없음). 호스트 관측·에이전트 설치와 2단계 스케일링 측정을 위해 E10에서 전환(DEC-36·DEC-50). EKS는 제어 플레인만 월 73달러라 범위에 과함 |
 | DB 배치 | DB 서브넷, 외부 경로 없음 | 보안 영역의 기본. 접근은 sg-app에서만 |
 | DB 가용성 | Single-AZ, Multi-AZ는 변수 | 비용. 변수로 켤 수 있게 두었고 장애 조치 측정은 [#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82)에서 한다 |
 | NAT | AZ별 2개 | 기획서의 다중 AZ 기준. 비용 트레이드오프는 리포트에 기록 |

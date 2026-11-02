@@ -36,3 +36,13 @@ output "alb_arn_suffix" {
 output "target_group_arn_suffix" {
   value = aws_lb_target_group.app.arn_suffix
 }
+
+output "asg_name" {
+  description = "컨테이너 인스턴스 ASG 이름(#89 인스턴스 스케일링 측정)"
+  value       = aws_autoscaling_group.ecs.name
+}
+
+output "capacity_provider_name" {
+  description = "ECS 용량 공급자 이름"
+  value       = aws_ecs_capacity_provider.ec2.name
+}
