@@ -67,7 +67,7 @@ sequenceDiagram
 ```
 
 - 세션은 RDS의 `SPRING_SESSION` 테이블에 있으므로 어느 태스크가 받아도 로그인이 유지됩니다.
-- ALB 헬스체크는 `/actuator/health/liveness`입니다. DB가 끊겨도 200을 돌려주므로 DB 장애 때 태스크가 불필요하게 교체되지 않습니다. DB 장애는 RDS 알람이 잡습니다.
+- ALB 헬스체크는 `/actuator/health/liveness`입니다. DB가 끊겨도 200을 돌려주므로 DB 장애 때 태스크가 불필요하게 교체되지 않습니다. DB 연결 장애는 ALB 5xx 비율 알람이 잡습니다(RDS 알람은 연결 수 초과·스토리지만 봅니다. 세션에서 확인 예정).
 
 ## 3. 배포 흐름
 
@@ -194,7 +194,7 @@ flowchart LR
 | 엔진 | PostgreSQL 16.15 (서울 리전 최신 16.x, 2026-10-07 확인) | 앱 8단계에서 16으로 확정. 마이너는 Terraform에서 `auto_minor_version_upgrade`로 자동 반영 |
 | 클래스 | db.t4g.micro | 비용. ARM(Graviton)이 같은 급 x86보다 쌈 |
 | 스토리지 | gp3 20 GB | 최소 크기 |
-| Multi-AZ | 변수 `multi_az`, 기본 false | 평소 꺼 두고 장애 재현 때만 켬 |
+| Multi-AZ | 변수 `multi_az`, 기본 false | 변수로 켤 수 있게 두었고 장애 조치 측정은 [#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82)에서 한다 |
 | 퍼블릭 접근 | 불가 | DB 서브넷 + sg-db |
 | 백업 보존 | 1일 | 반복 destroy 전제. 운영이면 7일 이상 |
 | 삭제 보호 | 끔 | 반복 destroy 전제 |
@@ -297,7 +297,7 @@ terraform/
 |---|---|---|
 | 컴퓨트 | ECS Fargate | 서버 관리 없음. EKS는 제어 플레인만 월 73달러이고 일주일 범위에 과함 |
 | DB 배치 | DB 서브넷, 외부 경로 없음 | 보안 영역의 기본. 접근은 sg-app에서만 |
-| DB 가용성 | Single-AZ, Multi-AZ는 변수 | 비용. 장애 재현 때 켜서 장애 조치 시간을 측정 |
+| DB 가용성 | Single-AZ, Multi-AZ는 변수 | 비용. 변수로 켤 수 있게 두었고 장애 조치 측정은 [#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82)에서 한다 |
 | NAT | AZ별 2개 | 기획서의 다중 AZ 기준. 비용 트레이드오프는 리포트에 기록 |
 | 배포 인증 | GitHub OIDC | 액세스 키 없음. 역할 신뢰 조건으로 레포·브랜치 제한 |
 | 사람 인증 | IAM Identity Center + MFA | 계정에 영구 키 0개 |
