@@ -9,7 +9,8 @@ module "network" {
 
   name_prefix = local.name_prefix
   azs         = var.azs
-  # CIDR은 모듈 기본값(docs/architecture.md 5.1) 그대로 쓴다.
+  # CIDR은 모듈 기본값(docs/architecture.md 5.1) 그대로 쓴다. 10.0.0.0/16(DEC-52)
+  nat_mode = "regional" # 리전 NAT 수동 모드, 2a·2c에 EIP 1개씩(DEC-41)
 }
 
 module "data" {
@@ -91,4 +92,47 @@ module "observability" {
   db_identifier           = module.data.db_identifier
 
   alarm_topic_arn = data.aws_sns_topic.alarms.arn
+}
+
+# ---------- 관제 VPC (E11 #91, DEC-37·40·52·53) ----------
+# Prometheus·Grafana(#92)와 ELK(E12)가 들어가는 공용 서비스 VPC. main에 두어 세션마다 만들고 지운다.
+# 이름 접두사 3tier-prod-mon: 배포 역할 권한 범위(3tier-prod-* 역할·인스턴스 프로필·비밀)를 넓히지 않으려고.
+module "network_monitoring" {
+  source = "../modules/network"
+
+  name_prefix          = "${local.name_prefix}-mon"
+  vpc_cidr             = "10.100.0.0/16"
+  azs                  = var.azs
+  public_subnet_cidrs  = ["10.100.0.0/24"] # 영역 NAT 자리(2a)만. 인바운드 입구는 없다
+  private_subnet_cidrs = ["10.100.10.0/24", "10.100.11.0/24"]
+  db_subnet_cidrs      = []
+
+  nat_mode                    = "single" # 영역 NAT 1개(DEC-41)
+  create_tier_security_groups = false
+}
+
+# 관제 ↔ 운영. 스테이징은 별도 루트(DEC-60)라 관제 ↔ 스테이징 피어링은 #101에서 만든다.
+module "peering_monitoring_prod" {
+  source = "../modules/vpc_peering"
+
+  name = "${local.name_prefix}-pcx-mon-prod"
+
+  requester_vpc_id          = module.network_monitoring.vpc_id
+  requester_cidr            = module.network_monitoring.vpc_cidr
+  requester_route_table_ids = module.network_monitoring.private_route_table_ids
+
+  accepter_vpc_id          = module.network.vpc_id
+  accepter_cidr            = module.network.vpc_cidr
+  accepter_route_table_ids = module.network.private_route_table_ids
+}
+
+module "monitoring" {
+  source = "../modules/monitoring"
+
+  name_prefix = "${local.name_prefix}-mon"
+  vpc_id      = module.network_monitoring.vpc_id
+
+  target_instance_security_group_id = module.compute.instance_security_group_id
+  target_app_security_group_id      = module.network.app_security_group_id
+  peering_dependency_ids            = module.peering_monitoring_prod.route_ids
 }

@@ -61,3 +61,21 @@ output "log_group_name" {
 output "dashboard_name" {
   value = module.observability.dashboard_name
 }
+
+output "monitoring_vpc_id" {
+  description = "관제 VPC(E11)"
+  value       = module.network_monitoring.vpc_id
+}
+
+output "peering_monitoring_prod_id" {
+  description = "관제 ↔ 운영 VPC 피어링"
+  value       = module.peering_monitoring_prod.peering_connection_id
+}
+
+output "nat_gateway_ids" {
+  description = "운영 리전 NAT, 관제 영역 NAT"
+  value = {
+    prod       = module.network.nat_gateway_id
+    monitoring = module.network_monitoring.nat_gateway_id
+  }
+}

@@ -121,8 +121,8 @@ flowchart LR
 | 이름 | CIDR | AZ | 용도 | 퍼블릭 IP 자동 할당 |
 |---|---|---|---|---|
 | `3tier-prod-vpc` | 10.0.0.0/16 | | VPC | |
-| `3tier-prod-public-a` | 10.0.0.0/24 | ap-northeast-2a | ALB, NAT | 예 |
-| `3tier-prod-public-c` | 10.0.1.0/24 | ap-northeast-2c | ALB, NAT | 예 |
+| `3tier-prod-public-a` | 10.0.0.0/24 | ap-northeast-2a | ALB | 예 |
+| `3tier-prod-public-c` | 10.0.1.0/24 | ap-northeast-2c | ALB | 예 |
 | `3tier-prod-private-a` | 10.0.10.0/24 | ap-northeast-2a | ECS 태스크 | 아니오 |
 | `3tier-prod-private-c` | 10.0.11.0/24 | ap-northeast-2c | ECS 태스크 | 아니오 |
 | `3tier-prod-db-a` | 10.0.20.0/24 | ap-northeast-2a | RDS | 아니오 |
@@ -134,16 +134,28 @@ flowchart LR
 - **AZ 2곳 (2a, 2c)**: 서울 리전의 AZ 4곳(2a~2d) 모두 Fargate와 db.t4g.micro를 지원함을 확인했습니다(2026-10-07). 2a와 2c는 서울에서 가장 먼저 생긴 AZ라 신규 서비스 지원이 가장 빠르고, 국내 자료에서 가장 흔히 쓰는 조합이라 골랐습니다. 두 AZ 사이 지연은 1ms 안팎이라 성능 차이는 없습니다.
 - **DB 서브넷이 2개인 이유**: RDS 서브넷 그룹이 최소 2개 AZ를 요구합니다. Single-AZ라도 2개가 필요하고, 나중에 Multi-AZ를 켜면 2c에 대기 인스턴스가 생깁니다.
 
+**관제 VPC(E11, DEC-40·52·53)**: Prometheus·Grafana(#92)와 ELK(E12)가 들어가는 공용 서비스 VPC입니다. 같은 network 모듈로 만들고 main에 두어 세션마다 생성·삭제합니다. 스테이징 VPC는 10.1.0.0/16으로 별도 루트(`terraform/staging`, DEC-60)에서 만듭니다.
+
+| 이름 | CIDR | AZ | 용도 |
+|---|---|---|---|
+| `3tier-prod-mon-vpc` | 10.100.0.0/16 | | 관제 VPC |
+| `3tier-prod-mon-public-a` | 10.100.0.0/24 | ap-northeast-2a | 영역 NAT 자리만. 인바운드 입구(ALB·공인 IP 인스턴스)는 없음 |
+| `3tier-prod-mon-private-a` / `-c` | 10.100.10.0/24, 10.100.11.0/24 | 2a, 2c | 관제 서버 |
+
 ### 5.2 라우팅
 
 | 라우트 테이블 | 연결 서브넷 | 0.0.0.0/0 → | 비고 |
 |---|---|---|---|
 | `3tier-prod-rt-public` | public-a, public-c | 인터넷 게이트웨이 | |
-| `3tier-prod-rt-private-a` | private-a | NAT Gateway (2a) | AZ별 NAT. 2c 장애 시 2a 태스크는 영향 없음 |
-| `3tier-prod-rt-private-c` | private-c | NAT Gateway (2c) | |
-| `3tier-prod-rt-db` | db-a, db-c | 없음 | 외부로 나가는 경로 자체가 없음 |
+| `3tier-prod-rt-private-a` | private-a | 리전 NAT `3tier-prod-nat` | 10.100.0.0/16 → 관제 피어링, S3 → 게이트웨이 엔드포인트 |
+| `3tier-prod-rt-private-c` | private-c | 리전 NAT `3tier-prod-nat`(같은 ID) | 같음 |
+| `3tier-prod-rt-db` | db-a, db-c | 없음 | 외부로 나가는 경로 자체가 없음. 피어링 경로도 넣지 않음 |
+| `3tier-prod-mon-rt-private-a` / `-c` | 관제 private | 영역 NAT `3tier-prod-mon-nat-a` | 10.0.0.0/16 → 운영 피어링, S3 → 게이트웨이 엔드포인트 |
 
-- **NAT Gateway 2개**: 기획서의 "다중 AZ 가용성" 기준. 하나만 두면 그 AZ 장애 시 다른 AZ의 태스크도 ECR 풀과 Secrets 조회가 막혀 재배포가 불가능해집니다. 비용은 시간당 약 0.12달러로 전체의 40% 이상이며, 이 트레이드오프는 비용 리포트에 기록합니다.
+- **운영 NAT: 리전 NAT 게이트웨이 수동 모드(E11, DEC-41)**: NAT ID 하나가 2a·2c에 EIP를 하나씩 두고 동작합니다. 기획서의 "다중 AZ 가용성" 기준은 그대로라 한 AZ가 죽어도 다른 AZ 태스크의 ECR 풀과 Secrets 조회가 살아 있습니다. 영역 NAT 2개(E04~E10)와 비용은 같고(AZ당 시간 요금), 사설 라우트 테이블이 같은 NAT ID를 가리켜 AZ를 늘려도 경로를 고칠 일이 없습니다. NAT가 퍼블릭 서브넷에 살 필요가 없어 퍼블릭 서브넷에는 ALB만 남습니다. 자동 모드는 새 AZ로 펼쳐지는 데 최대 60분이 걸려 AZ를 직접 지정하는 수동 모드를 썼습니다([리전 NAT](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html)).
+- **관제 NAT: 영역 NAT 1개**: 관제는 세션용이라 NAT AZ(2a) 장애 때 2c 서버의 아웃바운드가 끊기는 것을 감수했습니다(DEC-41·53).
+- **피어링(DEC-40)**: 관제 ↔ 운영 1개(`3tier-prod-pcx-mon-prod`), 같은 계정·리전이라 요청과 동시에 수락합니다. 피어링은 전이 라우팅을 하지 않아 관제 ↔ 스테이징을 따로 만들면 운영 ↔ 스테이징은 자동으로 막힙니다. 관제 ↔ 스테이징은 스테이징 루트(#101)에서 만듭니다.
+- **S3 게이트웨이 엔드포인트**: 세 VPC 모두 사설 라우트 테이블에 답니다. ECR 이미지 레이어(S3)가 NAT를 거치지 않고, 추가 요금이 없습니다. 피어링으로는 다른 VPC의 엔드포인트를 빌려 쓸 수 없어 VPC마다 둡니다.
 - 프라이빗 서브넷에서 NAT를 거쳐 나가는 트래픽은 ECR 이미지 풀, Secrets Manager, CloudWatch Logs, S3입니다. 인바운드는 ALB를 통해서만 들어옵니다.
 
 ### 5.3 Security Group
@@ -158,6 +170,7 @@ flowchart LR
 
 - 소스를 CIDR이 아니라 **SG 참조**로 적습니다. 태스크 IP는 재배포마다 바뀌지만 SG는 바뀌지 않습니다.
 - app의 아웃바운드 443은 NAT를 통한 AWS API 호출(ECR, Secrets Manager, CloudWatch, S3)용입니다. AWS API는 모두 443이므로 포트를 이것으로 좁힙니다.
+- **관제 수집 규칙(E11 #91)**: 관제 VPC의 `3tier-prod-mon-sg-prometheus`는 인바운드가 없고(접속은 SSM 포트 포워딩, DEC-57), 아웃바운드는 운영 컨테이너 인스턴스 SG의 9100(node_exporter)·8081(cAdvisor), app SG의 8080(`/actuator/prometheus`), 그리고 443(이미지·패키지·AWS API)만 엽니다. 대상 쪽(인스턴스 SG·app SG)은 그 포트를 Prometheus SG 참조로만 엽니다. 피어링된 같은 리전 VPC끼리는 SG를 서로 참조할 수 있어 IP 대역 대신 SG로 좁혔습니다.
 - db의 아웃바운드는 비워 둡니다. DB가 먼저 연결을 시작할 일이 없습니다.
 - 80은 HTTPS 리다이렉트를 위해서만 열고, ALB 리스너가 301로 돌려보냅니다.
 
@@ -251,7 +264,9 @@ terraform/
 ├── main/             반복 생성·삭제. 로컬 또는 GitHub Actions에서 apply
 │   └── modules 호출, 변수(multi_az 등), 출력(ALB DNS, RDS 엔드포인트)
 └── modules/
-    ├── network/      VPC, 서브넷, IGW, NAT, 라우트, SG
+    ├── network/      VPC, 서브넷, IGW, NAT(리전·영역), 라우트, S3 게이트웨이 엔드포인트, SG. 운영·관제(·스테이징)에 재사용
+    ├── vpc_peering/  피어링 1개와 양쪽 사설 경로
+    ├── monitoring/   관제 SG·수집 포트 규칙(#91), Prometheus·Grafana 서버(#92)
     ├── data/         RDS, Secrets Manager, S3, CloudFront
     ├── compute/      ECS, ALB, ACM, Route 53 레코드, IAM 역할
     └── observability/ CloudWatch 대시보드·알람(SNS 토픽은 bootstrap), 오토스케일링
