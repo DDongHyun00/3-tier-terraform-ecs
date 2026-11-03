@@ -125,8 +125,8 @@ resource "aws_ecs_service" "node_exporter" {
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
 
-  # destroy 때 사설 서브넷 인터넷 경로보다 먼저 지워지게(#108). 데몬도 ECS agent가 정지를 보고해야 끝난다
-  depends_on = [aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress]
+  # destroy 때 사설 서브넷 인터넷 경로와 인스턴스 역할 ECS 권한보다 먼저 지워지게(#108). 데몬도 ECS agent가 정지를 보고해야 끝난다
+  depends_on = [aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress, aws_iam_role_policy_attachment.ecs_instance_agent]
 }
 
 resource "aws_ecs_service" "cadvisor" {
@@ -140,5 +140,5 @@ resource "aws_ecs_service" "cadvisor" {
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
 
-  depends_on = [aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress]
+  depends_on = [aws_ecs_cluster_capacity_providers.this, terraform_data.network_egress, aws_iam_role_policy_attachment.ecs_instance_agent]
 }
