@@ -56,6 +56,17 @@ Fargate 때는 같은 destroy 순서였지만 태스크 정지를 Fargate 제어
 - 표준 구성은 ECS(`ecs`, `ecs-agent`, `ecs-telemetry`)·ECR·CloudWatch Logs·Secrets Manager VPC 엔드포인트를 사설 서브넷에 두어 agent가 NAT 없이도 통신하게 하는 것이다. 엔드포인트당 시간당 약 0.01 USD × AZ의 상시 비용이 들어 E11 관제 VPC 설계에서 함께 결정한다.
 - destroy가 10분을 넘으면 기다리지 말고 `STOPPING` 태스크와 `agentConnected`를 바로 본다. 세션 체크에 넣었다.
 
+## 재발: 2026-11-02 16:43, 두 번째 원인
+
+#109(경로 의존)를 머지하고 다시 띄운 뒤 돌린 destroy(run 41408163254)가 같은 증상으로 실패했다. 32개만 지우고 ECS 서비스가 DRAINING 20분 타임아웃.
+
+- **이번에는 NAT·사설 경로가 남아 있었다.** 경로 의존은 동작했다.
+- 지워진 32개 안에 컨테이너 인스턴스 역할의 ECS 정책 연결(`aws_iam_role_policy_attachment.ecs_instance_agent`, AmazonEC2ContainerServiceforEC2Role)이 있었다. 서비스는 이 연결에 의존하지 않아 destroy가 둘을 함께 시작했고, 정책이 떨어진 순간 인스턴스의 ECS agent가 ECS를 부를 권한을 잃었다. 다음 날 조회하니 컨테이너 인스턴스 2대 `agentConnected=False`, 태스크 2개 `STOPPING`이었다. 증상은 같고 끊긴 것만 네트워크에서 IAM으로 바뀌었다.
+- 같은 방식(컨테이너 인스턴스 강제 등록 해제 → 서비스 INACTIVE 13:11 → destroy 재실행)으로 정리했다.
+- 조치: 앱 서비스가 그 정책 연결에도 의존하게 했다. #93 데몬 서비스(node_exporter·cAdvisor)도 같은 의존을 건다.
+- 배운 것: "ECS agent가 태스크 정지를 보고하는 데 필요한 것"은 네트워크 경로, 인스턴스 역할 권한, 인스턴스 자체(ASG) 세 가지다. 서비스는 셋 모두보다 먼저 지워져야 한다. ASG는 용량 공급자를 거쳐 이미 서비스 뒤에 지워진다.
+- 비용 영향: 실패한 destroy 뒤 RDS·ALB·NAT 2개·인스턴스 2대가 다음 날 13:1x까지 약 20시간 떠 있었다(요금표 기준 약 5 USD). destroy 실패를 그 자리에서 확인하지 못한 탓이다. 세션 끝 destroy는 끝날 때까지 지켜보고 "Destroy complete"와 리소스 0을 확인한다(세션 체크).
+
 ## 영향
 
 사용자 영향은 없었다. 인스턴스 2대·RDS·ALB가 약 40분 더 떠 있었다(약 0.1 USD). 매 세션 끝 destroy가 이 구성에서는 반복 실패할 수 있었으므로, 측정 세션 당일에 고쳤다.
