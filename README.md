@@ -1,12 +1,12 @@
 # 3-tier-terraform-ecs
 
-Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 Terraform으로 구축하고, 배포·모니터링·비용 관리까지 자동화하는 개인 프로젝트입니다.
+Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS → RDS)에 Terraform으로 구축하고, 배포·모니터링·장애 재현·비용 관리까지 자동화하는 개인 프로젝트입니다. 컴퓨트는 Fargate로 시작해(v1, 태그 `v1-fargate`) 호스트 관측과 2단계 스케일링 측정을 위해 ECS on EC2로 전환했습니다(v2).
 
 > 진행 중입니다. 아래 내용 중 "예정"으로 표시한 부분은 아직 구현 전입니다.
 
-## 아키텍처 (계획)
+## 아키텍처
 
-- 사용자 → Route 53 + ACM(HTTPS) → ALB(퍼블릭 서브넷) → ECS Fargate(프라이빗 서브넷, AZ 2곳) → RDS(DB 서브넷)
+- 사용자 → Route 53 + ACM(HTTPS) → ALB(퍼블릭 서브넷) → ECS on EC2(프라이빗 서브넷, AZ 2곳, t3.small 용량 공급자·ASG) → RDS(DB 서브넷)
 - 배포: GitHub Actions(OIDC 인증) → ECR → ECS 롤링 배포, 실패 시 자동 롤백
 - 모니터링: CloudWatch 알람 → SNS → Amazon Q Developer in chat applications → Slack
 - 보안: 액세스 키 없는 배포(OIDC), DB 비밀번호는 Secrets Manager로 주입, DB는 외부 비공개
@@ -24,8 +24,9 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 ├── terraform/
 │   ├── bootstrap/        최초 1회 생성 후 유지: state 버킷, OIDC Provider, Route 53, ECR
 │   ├── main/             반복 생성·삭제: 모듈 호출, 변수, 출력 (terraform.tfvars.example 참고)
-│   └── modules/          network(VPC·서브넷·NAT·SG), data(RDS·Secrets Manager·S3·CloudFront)
-└── .github/workflows/    (예정) 배포 파이프라인
+│   └── modules/          network(VPC·서브넷·NAT·SG), data(RDS·Secrets Manager·S3·CloudFront),
+│                         compute(ALB·ECS 클러스터·EC2 용량 공급자·ASG·서비스), observability(알람·SNS·오토스케일링)
+└── .github/workflows/    ci(앱 테스트·Terraform 검증), deploy(이미지 빌드 → ECS 롤링 배포), terraform(plan 코멘트, 머지 시 apply, 수동 destroy)
 ```
 
 앱 설명은 [app/README.md](app/README.md)에 있습니다.
@@ -34,7 +35,7 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS Fargate → RDS)에 T
 
 - [아키텍처 설계](docs/architecture.md): CIDR·서브넷·SG·IAM·태그 규칙, 다이어그램
 - [비용 리포트](docs/cost.md): 월 예상 비용, 최적화 전후, 항목별 절감 판단, NAT Gateway 트레이드오프
-- [장애 재현 기록](docs/troubleshooting/): 태스크 강제 종료, 잘못된 이미지 롤백, DB 연결 실패 (증상 → 원인 → 해결 → 재발 방지)
+- [장애 재현 기록](docs/troubleshooting/): 태스크 강제 종료, 잘못된 이미지 롤백, DB 연결 실패, 컨테이너 인스턴스 종료 (증상 → 원인 → 해결 → 재발 방지)
 - [프로젝트 히스토리 (Notion)](https://app.notion.com/p/3f4330bd3846812395f4d19208283e9c): 에픽별 서사, 결정 기록(ADR), 트러블슈팅
 - 작업 추적: [Issues](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues) · [Milestones](https://github.com/DDongHyun00/3-tier-terraform-ecs/milestones) · [Project 보드](https://github.com/users/DDongHyun00/projects/11)
 
@@ -141,15 +142,44 @@ ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스�
 
 | 장애 | 날짜 | 사용자 영향 | 복구 | 울린 알람 | 기록 |
 |---|---|---|---|---|---|
+| 태스크 강제 종료 (1개 / 2개 동시) | 2026-11-02 | 1개: 0초 (1,248회 중 실패 0) / 2개: 46.5초 (1,635회 중 실패 140) | 1개 76초 / 2개 89초 (스케줄러가 새 태스크 기동) | 없음 (1분 남짓 중단은 탐지 공백) | [01-task-killed.md](docs/troubleshooting/01-task-killed.md) |
 | 잘못된 이미지 배포 | 2026-10-28 | 측정한 liveness 요청 217회 중 실패 0건 (게시판 요청 전체는 측정 안 함) | 서킷 브레이커 자동 롤백 5분 19초 (실패 판정 4분 5초 + 이전 리비전 복귀 1분 14초) | 없음 | [02-bad-image-rollback.md](docs/troubleshooting/02-bad-image-rollback.md) |
 | DB 연결 실패 (FIS로 DB 서브넷 10분 차단) | 2026-11-02 | 게시판·health 약 10분 실패(500·503, 30초 대기 뒤), liveness 666회 중 실패 0건 | 차단 해제와 동시에 재연결(1초 미만), 태스크 교체 0건 | 5xx 비율 알람, 차단 6분 11초 뒤 | [03-db-connection-failure.md](docs/troubleshooting/03-db-connection-failure.md) |
+
+### ECS on EC2 전환 전후 비교 (E10, 2026-11-02)
+
+컴퓨트를 Fargate(v1)에서 ECS on EC2(v2: t3.small 2~4대, 인스턴스당 태스크 1개, 용량 공급자 관리형 스케일링·종료 보호·드레이닝)로 바꾼 뒤, 같은 방법으로 다시 재서 비교했습니다. 전환 이유는 비용이 아니라 호스트 수준 관측(E11 에이전트)과 태스크·인스턴스 2단계 스케일링 측정입니다. 응답 시간 비교는 측정 PC가 달라 k6가 아니라 ALB `TargetResponseTime`(서버 측)으로 했습니다.
+
+| 항목 | v1 Fargate | v2 ECS on EC2 | 비고 |
+|---|---|---|---|
+| main apply (destroy 상태에서) | 8분 31초 (73개) | 8분 34초 (82개) | 인스턴스 기동·클러스터 등록 94초가 들어가도 전체는 같음 |
+| ECS 롤링 배포 (새 배포 → COMPLETED, 태스크 2개) | 3분 21초 ~ 3분 22초 | 4분 50초 | EC2는 새 태스크 자리가 없어 인스턴스 2→4 증설(약 2분) 뒤 기동. 워크플로 전체는 캐시 적중 기준 7분 18초 / 5분 28초. 배포 뒤 빈 인스턴스는 16분 43초 뒤 자동 축소 |
+| 스케일 아웃 2→4 (200 RPS 부하 시작 → 4개 healthy) | 8분 0초 | 8분 48초 | EC2는 태스크 4개 결정(5분 52초) → ASG 2→4(36초) → 인스턴스 등록(52초) → 태스크 기동. 2단계 스케일링 실측 |
+| 스케일 인 (부하 종료 → 태스크 2개) | 24분 | 22분 52초 | 목표 추적 축소 알람 15분 + 쿨다운 300초 |
+| 스케일 인 (부하 종료 → 인스턴스 2대) | 해당 없음 | 39분 14초 | 용량 공급자 축소 알람 15분, 태스크 있는 인스턴스는 종료 보호 |
+| 2 태스크 과부하 구간 응답 (ALB p95, 분 단위) | 5.1 ~ 6.8초 | 8.2 ~ 9.1초 | 늘어나기 전. 클라이언트(k6) p95는 Fargate 9.4초(E07) / EC2 9.8 ~ 11.0초 |
+| 4 태스크 안정 구간 응답 (ALB p50 / p95) | 18 ms / 30 ms | 39 ms / 114 ms | 늘어난 뒤. Fargate 값은 E08 재측정(01:28~01:29 KST), E07 때는 31 ms. 호스트 CPU 15%·태스크 CPU 70%로 포화는 아님. 원인은 트러블슈팅 기록(Notion)에서 추적 중, #90 |
+| 태스크 1개 강제 종료 (영향 / 복귀) | 0초 / 76초 | 0초 / 85초 | 등록 해제 29초 → 7초. 새 태스크는 옛 태스크 자리를 15~20초 기다림 |
+| 태스크 2개 동시 종료 (영향 / 복귀) | 46.5초 / 89초 | 68.8초 / 81초 | 등록 해제가 빨라져 빈 구간이 바로 시작, 자리 대기 11~13초 추가 |
+| 컨테이너 인스턴스 1대 ASG 종료 (영향 / 교체) | 해당 없음 | 0초 (ALB 5xx·연결 오류 0 기준) / 4분 30초 | 관리형 드레이닝이 수명주기 훅을 받아 우아하게 교체. probe는 요청 46초 뒤부터 기록했고 타임아웃 21건은 원인 미확정. [04-instance-terminated.md](docs/troubleshooting/04-instance-terminated.md) |
+| CPU 알람 ALARM 도달 (과부하 시작 기준) | 5분 15초 | 5분 49초 | missing 처리·3/5 설정, 목표 7분 이내 통과 |
+| main destroy | 5분 57초 | 1차 실패(22분 22초) + 2차 5분 30초 | NAT가 태스크 정지 중에 지워져 에이전트가 끊기고 서비스가 DRAINING에 고착. 재발 방지는 후속 PR |
+| 시간당 컴퓨트 비용 (태스크 2개 기준, 서울 온디맨드) | 약 0.057 USD | 약 0.06 USD (t3.small × 2 + EBS) | 실제 청구액 비교는 #90·E09 |
+
+- 응답 시간은 늘어나기 전·후 모두 EC2가 느렸습니다(과부하 구간 ALB p95 5.1~6.8초 → 8.2~9.1초, 안정 구간 30 ms → 114 ms). 호스트와 태스크 모두 포화가 아니어서 인스턴스 유형(버스트형, 물리 코어 1개)과 컨테이너 CPU 설정을 #90에서 따져 봅니다.
+- 2단계 스케일링의 추가 비용은 48초였습니다. 용량 공급자가 자리를 못 잡은 태스크를 36초 만에 감지해 증설을 시작했고 인스턴스 등록이 52초 걸렸습니다.
+- EC2 전환으로 새로 생긴 책임은 두 가지였습니다. 에이전트의 네트워크 경로(NAT가 먼저 지워지면 태스크 정지 보고가 막힘)와 인스턴스 수명(드레이닝·종료 보호 설정이 없으면 태스크가 있는 인스턴스가 꺼짐). 둘 다 이번 측정에서 실제로 드러났습니다.
+- 근거: apply [run 41378930434](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41378930434), 배포 [run 41379830810](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41379830810), destroy [run 41392316211](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41392316211)·[run 41395572307](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41395572307). k6 분당 집계·ALB 분당 비교·probe·상태 CSV는 로컬 `local/captures/E10/`에 있고 Notion 실측 기록에 줄로 정리했습니다.
 
 ## 진행 상태
 
 - [x] 게시판 앱 준비
 - [x] 클라우드 대응 리팩토링 (PostgreSQL 전환, Flyway, DB 세션 저장, 헬스체크, S3 파일 저장, 컨테이너 이미지)
-- [ ] Terraform 인프라 구축 (bootstrap, 네트워크·데이터 계층 완료 / 컴퓨트·HTTPS 진행 예정)
-- [ ] CI/CD 파이프라인
-- [ ] 모니터링과 오토스케일링
-- [ ] 장애 재현과 기록
-- [ ] 비용 정리
+- [x] Terraform 인프라 구축 (bootstrap, 네트워크·데이터·컴퓨트·HTTPS)
+- [x] CI/CD 파이프라인 (OIDC, 이미지 빌드, 롤링 배포, Terraform plan·apply·destroy)
+- [x] 모니터링과 오토스케일링 (CloudWatch 알람 → Slack, 목표 추적 스케일링, k6 부하 시험)
+- [x] 장애 재현과 기록 (태스크 종료, 잘못된 이미지 롤백, DB 연결 실패, 인스턴스 종료 / RDS 장애 조치는 예정)
+- [x] ECS on EC2 전환과 전후 비교 측정 (비용 비교 문서는 예정)
+- [ ] 통합 모니터링 (관제 VPC, Prometheus·Grafana, 스테이징 환경)
+- [ ] 중앙 로그 (Elasticsearch·Kibana, Fluent Bit)
+- [ ] 비용 정리와 포트폴리오 마무리
