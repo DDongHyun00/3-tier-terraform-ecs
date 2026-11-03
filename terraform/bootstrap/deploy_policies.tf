@@ -132,6 +132,42 @@ data "aws_iam_policy_document" "ecs_boundary" {
     ]
     resources = ["*"]
   }
+
+  # ---- 관제 서버 역할(3tier-prod-mon-*, E11)의 상한. 실제 권한은 main의 역할 정책이 정한다 ----
+  # Prometheus ec2_sd_configs가 수집 대상 인스턴스를 찾는다(DEC-55). 조회는 리소스 수준 권한이 없어 *
+  statement {
+    sid       = "MonitoringDiscoverInstances"
+    actions   = ["ec2:DescribeInstances", "ec2:DescribeAvailabilityZones"]
+    resources = ["*"]
+  }
+
+  # Grafana 알림 → 기존 알람 토픽(DEC-58, #95). 토픽이 KMS로 암호화돼 게시자에게 키 권한이 필요하다
+  statement {
+    sid       = "MonitoringAlertPublish"
+    actions   = ["sns:Publish", "sns:GetTopicAttributes"]
+    resources = ["arn:aws:sns:${local.region}:${local.account}:${local.main_prefix}-*"]
+  }
+
+  statement {
+    sid       = "MonitoringAlertTopicKey"
+    actions   = ["kms:GenerateDataKey*", "kms:Decrypt"]
+    resources = [aws_kms_key.alerts.arn]
+  }
+
+  # Grafana CloudWatch 데이터 소스(ALB·RDS 지표, #95). 읽기 작업은 리소스 수준 권한이 없어 *
+  statement {
+    sid = "MonitoringCloudWatchRead"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmsForMetric",
+      "cloudwatch:DescribeAlarmHistory",
+      "tag:GetResources",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "ecs_boundary" {
@@ -855,6 +891,179 @@ data "aws_iam_policy_document" "deploy_observability" {
 }
 
 # ---------- 정책 생성과 부착 ----------
+# ---------- 6. E11 네트워크·관제 (#111) ----------
+# 관제 VPC·피어링(#91), 리전 NAT(DEC-41), S3 게이트웨이 엔드포인트, 관제 서버 단독 인스턴스(#92),
+# 앱 지표 탐색 Cloud Map·지표 경로 차단 리스너 규칙(#94).
+# network 정책에 넣지 않고 나눈 이유: 관리형 정책 크기 상한(6,144자)과 E11 변경을 한 묶음으로 되돌릴 수 있게 하려고.
+locals {
+  e11_ec2_arns = [
+    for type in ["vpc", "vpc-peering-connection", "vpc-endpoint", "route-table", "natgateway", "elastic-ip"] :
+    "arn:aws:ec2:${local.region}:${local.account}:${type}/*"
+  ]
+}
+
+data "aws_iam_policy_document" "deploy_network_e11" {
+  # 피어링 생성·수락. 같은 계정·리전이라 aws_vpc_peering_connection(auto_accept)이 두 작업을 함께 부른다
+  statement {
+    sid = "VpcPeeringCreateAndAccept"
+    actions = [
+      "ec2:CreateVpcPeeringConnection",
+      "ec2:AcceptVpcPeeringConnection",
+      "ec2:ModifyVpcPeeringConnectionOptions",
+    ]
+    resources = local.e11_ec2_arns
+  }
+
+  # S3 게이트웨이 엔드포인트. 생성 때 라우트 테이블에 경로를 넣는다
+  statement {
+    sid       = "VpcEndpointCreateAndChange"
+    actions   = ["ec2:CreateVpcEndpoint", "ec2:ModifyVpcEndpoint"]
+    resources = local.e11_ec2_arns
+  }
+
+  # 리전 NAT 수동 모드: AZ별 EIP 연결·해제(availability_zone_address)
+  statement {
+    sid       = "RegionalNatAddress"
+    actions   = ["ec2:AssociateNatGatewayAddress", "ec2:DisassociateNatGatewayAddress"]
+    resources = local.e11_ec2_arns
+  }
+
+  # 삭제는 이 프로젝트 태그가 붙은 것만
+  statement {
+    sid       = "E11DeleteProjectOnly"
+    actions   = ["ec2:DeleteVpcPeeringConnection", "ec2:DeleteVpcEndpoints"]
+    resources = local.e11_ec2_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "E11TagOnCreate"
+    actions   = ["ec2:CreateTags"]
+    resources = local.e11_ec2_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:CreateAction"
+      values   = ["CreateVpcPeeringConnection", "CreateVpcEndpoint"]
+    }
+  }
+
+  # 생성 뒤 태그 변경(Name·default_tags 바뀔 때)은 이 프로젝트 리소스만. network 정책의 Ec2TagProjectOnly에는
+  # 피어링·엔드포인트·인스턴스 ARN이 없어서 따로 둔다
+  statement {
+    sid       = "E11TagProjectOnly"
+    actions   = ["ec2:CreateTags", "ec2:DeleteTags"]
+    resources = concat(local.e11_ec2_arns, ["arn:aws:ec2:${local.region}:${local.account}:instance/*"])
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # 관제 서버는 ASG가 아닌 단독 인스턴스라 배포 역할이 직접 종료한다(RunInstances는 compute-ec2 정책에 있다)
+  statement {
+    sid       = "Ec2InstanceProjectOnly"
+    actions   = ["ec2:TerminateInstances", "ec2:ModifyInstanceAttribute", "ec2:StopInstances", "ec2:StartInstances"]
+    resources = ["arn:aws:ec2:${local.region}:${local.account}:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  # AL2023 arm64 AMI ID 조회(공개 파라미터, DEC-54)
+  statement {
+    sid       = "SsmAl2023AmiParameter"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:aws:ssm:${local.region}::parameter/aws/service/ami-amazon-linux-latest/*"]
+  }
+
+  # 앱 태스크 지표 탐색용 Cloud Map 비공개 DNS 네임스페이스·서비스(DEC-55, #94).
+  # 네임스페이스 생성 때 Cloud Map이 호출자 권한으로 Route 53 비공개 호스팅 존을 만든다(Cloud Map API 권한 참조)
+  statement {
+    sid = "CloudMapNamespaceAndService"
+    actions = [
+      "servicediscovery:CreatePrivateDnsNamespace",
+      "servicediscovery:DeleteNamespace",
+      "servicediscovery:GetNamespace",
+      "servicediscovery:CreateService",
+      "servicediscovery:DeleteService",
+      "servicediscovery:GetService",
+      "servicediscovery:UpdateService",
+      "servicediscovery:GetOperation",
+      "servicediscovery:ListInstances",
+      "servicediscovery:GetInstance",
+      "servicediscovery:DeregisterInstance",
+      "servicediscovery:ListNamespaces",
+      "servicediscovery:ListServices",
+      "servicediscovery:ListOperations",
+      "servicediscovery:TagResource",
+      "servicediscovery:UntagResource",
+      "servicediscovery:ListTagsForResource",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [local.region]
+    }
+  }
+
+  # destroy 때 등록이 남은 Cloud Map 서비스를 지우려면(force_destroy) 인스턴스 등록 해제를 부른다.
+  # Cloud Map API 권한 참조상 DeregisterInstance는 Route 53 헬스 체크 조회·삭제·수정도 요구한다(헬스 체크는 쓰지 않는다)
+  statement {
+    sid       = "Route53HealthCheckForCloudMap"
+    actions   = ["route53:GetHealthCheck", "route53:DeleteHealthCheck", "route53:UpdateHealthCheck"]
+    resources = ["arn:aws:route53:::healthcheck/*"]
+  }
+
+  # 네임스페이스의 비공개 호스팅 존 생성·조회와, 관제 VPC에서도 그 이름을 풀게 하는 VPC 연결(DEC-55).
+  # 존 ID는 생성 뒤에 정해져 hostedzone/*로 둔다. 공개 존(3tier.link)의 레코드 변경 권한은 compute 정책 그대로다
+  statement {
+    sid       = "Route53PrivateZoneCreate"
+    actions   = ["route53:CreateHostedZone", "route53:ListHostedZonesByName"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "Route53PrivateZoneVpc"
+    actions = [
+      "route53:GetHostedZone",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+      "route53:ListTagsForResource",
+    ]
+    resources = ["arn:aws:route53:::hostedzone/*"]
+  }
+
+  # /actuator/prometheus를 ALB에서 막는 리스너 규칙(#94). Prometheus는 피어링으로 태스크에 직접 붙는다
+  statement {
+    sid = "ElbListenerRules"
+    actions = [
+      "elasticloadbalancing:CreateRule",
+      "elasticloadbalancing:DeleteRule",
+      "elasticloadbalancing:ModifyRule",
+      "elasticloadbalancing:SetRulePriorities",
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:RemoveTags",
+    ]
+    resources = [
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener/app/${local.main_prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener-rule/app/${local.main_prefix}-*",
+    ]
+  }
+}
+
 locals {
   deploy_policies = {
     state-ecr     = data.aws_iam_policy_document.deploy_state_ecr.json
@@ -863,6 +1072,7 @@ locals {
     data          = data.aws_iam_policy_document.deploy_data.json
     observability = data.aws_iam_policy_document.deploy_observability.json
     compute-ec2   = data.aws_iam_policy_document.deploy_compute_ec2.json
+    network-e11   = data.aws_iam_policy_document.deploy_network_e11.json
   }
 }
 
