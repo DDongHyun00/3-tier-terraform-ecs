@@ -1,0 +1,140 @@
+#!/bin/bash
+# 관제 서버 부팅 스크립트(E11 #92). Prometheus·Grafana·node_exporter를 docker compose로 올린다.
+# 템플릿 변수는 Terraform이 채운다. 셸 변수는 $${VAR} 형태로 이스케이프했다.
+set -euo pipefail
+exec > >(tee /var/log/monitoring-bootstrap.log) 2>&1
+
+# 네트워크 단계는 재시도한다(NAT·DNS가 막 준비된 직후일 수 있다)
+retry() {
+  local n=0
+  until "$@"; do
+    n=$((n + 1))
+    if [ "$${n}" -ge 10 ]; then echo "failed after $${n} tries: $*"; return 1; fi
+    sleep 15
+  done
+}
+
+# ---------- Docker + compose 플러그인 ----------
+retry dnf install -y docker
+systemctl enable --now docker
+mkdir -p /usr/libexec/docker/cli-plugins
+retry curl -fsSL -o /usr/libexec/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-aarch64"
+chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+
+# ---------- 설정 파일 ----------
+BASE=/opt/monitoring
+mkdir -p "$${BASE}/prometheus" "$${BASE}/grafana/provisioning/datasources" "$${BASE}/data/prometheus" "$${BASE}/data/grafana"
+chown -R 65534:65534 "$${BASE}/data/prometheus"   # prom/prometheus는 nobody(65534)로 돈다
+chown -R 472:0 "$${BASE}/data/grafana"            # grafana/grafana는 UID 472
+
+cat > "$${BASE}/prometheus/prometheus.yml" <<'PROM'
+global:
+  scrape_interval: ${scrape_interval}
+  evaluation_interval: ${scrape_interval}
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # 관제 서버 자신
+  - job_name: node-monitoring
+    static_configs:
+      - targets: ["localhost:9100"]
+        labels:
+          role: monitoring
+
+  # 운영 ECS 컨테이너 인스턴스(호스트 지표). ASG 태그로 찾아 사설 IP로 수집한다(DEC-55)
+  - job_name: node-ecs
+    ec2_sd_configs:
+      - region: ${region}
+        port: ${node_exporter_port}
+        filters:
+          - name: tag:aws:autoscaling:groupName
+            values: ["${target_asg_name}"]
+          - name: instance-state-name
+            values: ["running"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: az
+
+  # 운영 ECS 컨테이너 인스턴스(컨테이너 지표, cAdvisor)
+  - job_name: cadvisor-ecs
+    ec2_sd_configs:
+      - region: ${region}
+        port: ${cadvisor_port}
+        filters:
+          - name: tag:aws:autoscaling:groupName
+            values: ["${target_asg_name}"]
+          - name: instance-state-name
+            values: ["running"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: az
+PROM
+
+cat > "$${BASE}/grafana/provisioning/datasources/prometheus.yml" <<'DS'
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+DS
+
+# Grafana 관리자 비밀번호는 Secrets Manager에서 읽어 .env에만 둔다(디스크에 600)
+GRAFANA_PASSWORD="$(retry aws secretsmanager get-secret-value --region ${region} --secret-id ${grafana_secret_id} --query SecretString --output text)"
+umask 077
+cat > "$${BASE}/.env" <<ENV
+GF_SECURITY_ADMIN_PASSWORD=$${GRAFANA_PASSWORD}
+ENV
+umask 022
+
+cat > "$${BASE}/compose.yml" <<'COMPOSE'
+services:
+  prometheus:
+    image: ${prometheus_image}
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${retention}
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+
+  grafana:
+    image: ${grafana_image}
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./data/grafana:/var/lib/grafana
+
+  node-exporter:
+    image: ${node_exporter_image}
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+COMPOSE
+
+cd "$${BASE}"
+retry docker compose pull
+docker compose up -d
+echo "monitoring bootstrap done"
