@@ -30,7 +30,7 @@ variable "network_egress_dependency_ids" {
 }
 
 variable "log_source_security_group_id" {
-  description = "로그를 보내는 쪽 SG(운영 ECS 컨테이너 인스턴스). Fluent Bit가 host 모드라 인스턴스 SG에서 9200으로 들어온다"
+  description = "로그를 보내는 쪽 SG(운영 앱 태스크 SG). FireLens 사이드카가 앱 태스크 ENI로 9200에 붙는다"
   type        = string
 }
 
