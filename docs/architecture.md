@@ -315,12 +315,13 @@ terraform/
 
 | 리소스 | 시간당 (USD) | 비중 | 비고 |
 |---|---|---|---|
-| NAT Gateway ×2 | 0.128 | 약 48% | 기획서의 다중 AZ 기준. EIP 퍼블릭 IPv4 요금 포함. 1개로 줄이면 절반 |
-| ALB | 0.04 | 약 15% | 퍼블릭 IPv4 2개 요금 포함 |
-| 컴퓨트: ECS on EC2 t3.small ×2 + gp3 30 GB ×2 (v2) | 0.059 | 약 22% | v1 Fargate ×2(0.5 vCPU / 1 GB)는 0.057. 배포·스케일 아웃 때 인스턴스가 2→4로 늘어 비례 증가, 축소까지 15~40분 지연. `docs/cost.md` 5절 |
-| RDS db.t4g.micro + 20 GB | 0.03 | 약 11% | Multi-AZ 켜면 인스턴스 2배 |
-| 기타 (Secrets, 로그, 알람, Route 53, CloudFront, S3) | 약 0.01 | 약 4% | 대부분 월 고정 |
-| 합계 | 약 0.267 | | 하루 24시간 약 6.4달러, 8시간 세션 약 2.1달러 |
+| 운영 리전 NAT (2a·2c EIP) | 0.128 | 약 36% | 기획서의 다중 AZ 기준. EIP 퍼블릭 IPv4 요금 포함. AZ 하나로 줄이면 절반 |
+| ALB | 0.04 | 약 11% | 퍼블릭 IPv4 2개 요금 포함 |
+| 컴퓨트: ECS on EC2 t3.small ×2 + gp3 30 GB ×2 (v2) | 0.059 | 약 17% | v1 Fargate ×2(0.5 vCPU / 1 GB)는 0.057. 배포·스케일 아웃 때 인스턴스가 2→4로 늘어 비례 증가, 축소까지 15~40분 지연. `docs/cost.md` 5절 |
+| RDS db.t4g.micro + 20 GB | 0.03 | 약 8% | Multi-AZ 켜면 인스턴스 2배 |
+| 기타 (Secrets, 로그, 알람, Route 53, CloudFront, S3) | 약 0.01 | 약 3% | 대부분 월 고정 |
+| 관제 VPC·서버 (E11: 영역 NAT 1 + EIP, t4g.small, gp3 20 GB, 비밀) | 0.088 | 약 25% | 운영 NAT는 리전 NAT로 바꿔도 같은 요금. `docs/cost.md` 6절, CloudWatch와 비교는 `docs/monitoring.md` |
+| 합계 | 약 0.355 | | 운영 0.267 + 관제 0.088. 8시간 세션 약 2.8달러 |
 
 - 평소에는 main을 destroy해 두고 bootstrap만 유지합니다. bootstrap 유지 비용은 월 1달러 미만입니다.
 - 정확한 수치는 22단계에서 실제 청구액으로 갱신합니다.
