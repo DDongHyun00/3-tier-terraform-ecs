@@ -114,7 +114,7 @@ flowchart LR
 - 토픽은 고객 관리형 KMS 키로 암호화했다. CloudWatch 알람은 AWS 관리형 키(aws/sns)로 암호화된 토픽에는 발행하지 못하므로, 키 정책에서 이 계정의 알람(`aws:SourceAccount`, `aws:SourceArn`)에만 데이터 키 사용을 허용했다. 키 로테이션도 켰다.
 - Q Developer API는 서울 리전에 없어서 채널 설정은 us-east-2에 두고 서울 토픽을 연결했다. 채널 가드레일은 기본값(AdministratorAccess) 대신 CloudWatchReadOnlyAccess로 제한했다.
 
-**Grafana 알림(E11 #95, DEC-58·62)**: 관제 Prometheus가 15초마다 수집하고 Grafana가 15초마다 규칙을 평가합니다. 알림은 Grafana SNS 연락처 → 같은 알람 토픽 → Amazon Q Developer → Slack으로, CloudWatch 알람과 경로를 공유합니다. Q Developer는 사용자 정의 알림 형식(`version 1.0`, `source custom`, `content.description`)만 Slack에 올리므로 Grafana 메시지 템플릿이 그 JSON을 만듭니다.
+**Grafana 알림(E11 #95, DEC-58·62)**: 관제 Prometheus가 15초마다 수집하고 Grafana가 10초마다 규칙을 평가합니다(Grafana 스케줄러 기본 간격 10초의 배수만 허용). 알림은 Grafana SNS 연락처 → 같은 알람 토픽 → Amazon Q Developer → Slack으로, CloudWatch 알람과 경로를 공유합니다. Q Developer는 사용자 정의 알림 형식(`version 1.0`, `source custom`, `content.description`)만 Slack에 올리므로 Grafana 메시지 템플릿이 그 JSON을 만듭니다.
 
 | 규칙 | 식 | 기준 | 심각도 |
 |---|---|---|---|

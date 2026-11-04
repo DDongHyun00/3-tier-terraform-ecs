@@ -34,7 +34,8 @@ groups:
   - orgId: 1
     name: app
     folder: 3tier
-    interval: 15s
+    # 평가 주기는 Grafana 스케줄러 기본 간격(10초)의 배수여야 한다. 15초로 두었더니 프로비저닝이 실패해 Grafana가 재시작을 반복했다(11/04)
+    interval: 10s
     rules:
       # 앱 컨테이너 평균 CPU(예약 0.5 vCPU 대비 %). CloudWatch ECS CPUUtilization과 같은 기준이다
       - uid: app-cpu-warning
