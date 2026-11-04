@@ -187,3 +187,35 @@ variable "cadvisor_image" {
   type    = string
   default = "gcr.io/cadvisor/cadvisor:v0.49.1"
 }
+
+# ---------- 로그 라우터 (E12 #98, FireLens) ----------
+# 켜면 앱 로그를 FireLens(Fluent Bit 사이드카)로 Elasticsearch에 보낸다. 끄면 지금처럼 awslogs → CloudWatch Logs
+variable "enable_log_router" {
+  description = "앱 로그를 FireLens로 Elasticsearch에 보낼지. 스테이징처럼 ELK가 없는 환경은 false"
+  type        = bool
+  default     = false
+}
+
+variable "log_router_image" {
+  description = "AWS for Fluent Bit. FireLens 공식 이미지이고 JSON 파싱 설정(/fluent-bit/configs/parse-json.conf)을 포함한다"
+  type        = string
+  default     = "public.ecr.aws/aws-observability/aws-for-fluent-bit:2.34.3.20261028"
+}
+
+variable "elasticsearch_host" {
+  description = "로그를 받을 Elasticsearch 사설 IP(관제 VPC, 피어링 경유)"
+  type        = string
+  default     = ""
+}
+
+variable "elasticsearch_user_secret_arn" {
+  description = "Fluent Bit 계정(fluentbit) 비밀번호가 든 비밀. 실행 역할이 읽어 HTTP_Passwd로 넣는다"
+  type        = string
+  default     = ""
+}
+
+variable "log_index_prefix" {
+  description = "앱 로그 인덱스 접두사(logging 모듈과 같은 값). 날짜별 인덱스 <접두사>-YYYY.MM.DD"
+  type        = string
+  default     = "app-board"
+}

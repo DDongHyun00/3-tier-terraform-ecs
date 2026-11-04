@@ -32,8 +32,8 @@ resource "aws_ecs_task_definition" "app" {
     cpu_architecture        = "X86_64"
   }
 
-  container_definitions = jsonencode([
-    {
+  container_definitions = jsonencode(concat([
+    merge({
       name      = "board"
       image     = var.image
       essential = true
@@ -60,19 +60,12 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DB_PASSWORD", valueFrom = "${var.db_secret_arn}:password::" },
       ]
 
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.app.name
-          awslogs-region        = var.region
-          awslogs-stream-prefix = "board"
-        }
-      }
+      logConfiguration = local.app_log_configuration
 
       # SIGTERM 뒤 이 시간 안에 안 끝나면 SIGKILL. 앱 graceful 20초보다 길게
       stopTimeout = var.stop_timeout
-    }
-  ])
+    }, local.app_depends_on)
+  ], local.log_router_containers))
 }
 
 # ---------- 서비스 ----------
