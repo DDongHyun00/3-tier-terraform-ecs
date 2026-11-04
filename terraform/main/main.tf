@@ -170,5 +170,5 @@ module "logging" {
 
   peering_dependency_ids        = module.peering_monitoring_prod.route_ids
   network_egress_dependency_ids = module.network_monitoring.private_egress_dependency_ids
-  log_source_security_group_id  = module.compute.instance_security_group_id
+  log_source_security_group_id  = module.network.app_security_group_id # FireLens는 앱 태스크 ENI를 쓴다(#98)
 }

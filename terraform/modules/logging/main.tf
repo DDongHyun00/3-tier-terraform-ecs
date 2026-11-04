@@ -13,11 +13,24 @@ resource "aws_security_group" "elk" {
   tags        = { Name = "${var.name_prefix}-sg-elk" }
 }
 
-# 운영 컨테이너 인스턴스의 Fluent Bit(host 모드)가 피어링으로 로그를 보낸다(#98)
-resource "aws_vpc_security_group_ingress_rule" "es_from_app_instances" {
+# 운영 앱 태스크 안의 FireLens(Fluent Bit 사이드카, #98)가 피어링으로 로그를 보낸다.
+# 사이드카는 앱 태스크의 ENI(awsvpc)를 같이 쓰므로 출발지는 앱 태스크 SG다(인스턴스 SG가 아니다)
+resource "aws_vpc_security_group_ingress_rule" "es_from_app_tasks" {
   security_group_id            = aws_security_group.elk.id
-  description                  = "Elasticsearch HTTP from Fluent Bit on app instances"
+  description                  = "Elasticsearch HTTP from FireLens in app tasks"
   referenced_security_group_id = var.log_source_security_group_id
+  from_port                    = 9200
+  to_port                      = 9200
+  ip_protocol                  = "tcp"
+
+  depends_on = [terraform_data.peering_ready]
+}
+
+# 앱 SG는 아웃바운드를 443·DB로만 열어 두었다. FireLens가 ELK 9200으로 나갈 수 있게 짝이 되는 규칙을 둔다
+resource "aws_vpc_security_group_egress_rule" "app_tasks_to_es" {
+  security_group_id            = var.log_source_security_group_id
+  description                  = "FireLens to Elasticsearch (monitoring VPC)"
+  referenced_security_group_id = aws_security_group.elk.id
   from_port                    = 9200
   to_port                      = 9200
   ip_protocol                  = "tcp"
