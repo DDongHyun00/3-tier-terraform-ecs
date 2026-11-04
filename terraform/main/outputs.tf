@@ -58,10 +58,6 @@ output "log_group_name" {
   value = module.compute.log_group_name
 }
 
-output "dashboard_name" {
-  value = module.observability.dashboard_name
-}
-
 output "monitoring_vpc_id" {
   description = "관제 VPC(E11)"
   value       = module.network_monitoring.vpc_id

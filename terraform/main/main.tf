@@ -83,13 +83,11 @@ module "observability" {
   source = "../modules/observability"
 
   name_prefix = local.name_prefix
-  region      = var.region
 
   alb_arn_suffix          = module.compute.alb_arn_suffix
   target_group_arn_suffix = module.compute.target_group_arn_suffix
   cluster_name            = module.compute.cluster_name
   service_name            = module.compute.service_name
-  db_identifier           = module.data.db_identifier
 
   alarm_topic_arn = data.aws_sns_topic.alarms.arn
 }
@@ -149,4 +147,7 @@ module "monitoring" {
 
   # Grafana 알림 → 기존 알람 토픽 → Slack(#95)
   alarm_topic_arn = data.aws_sns_topic.alarms.arn
+
+  # RDS 알림은 CloudWatch 알람에서 Grafana로 옮겼다(DEC-45·62)
+  db_identifier = module.data.db_identifier
 }
