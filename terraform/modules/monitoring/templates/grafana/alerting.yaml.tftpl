@@ -2,11 +2,13 @@ apiVersion: 1
 
 # Slack 경로: Grafana SNS 연락처 → 기존 알람 토픽 → Amazon Q Developer → Slack(DEC-58).
 # Q Developer는 사용자 정의 알림 형식(version 1.0, source custom, content.description)의 JSON만 Slack에 올린다.
+# 측정값은 알림 템플릿의 .Values가 아니라 규칙 annotation의 $values로 넣는다. SNS 연락처 메시지에서 .Values를 쓰면
+# 템플릿 실행이 실패해 JSON이 깨지고 Q Developer가 메시지를 버렸다(11/04, SNS 전달은 성공·Slack 미표시).
 templates:
   - orgId: 1
     name: qdev
     template: |
-      {{ define "qdev.json" }}{"version":"1.0","source":"custom","content":{"textType":"client-markdown","title":"{{ if eq .Status "firing" }}:rotating_light: Grafana {{ .CommonLabels.severity }}: {{ .CommonLabels.alertname }}{{ else }}:white_check_mark: Grafana 해소: {{ .CommonLabels.alertname }}{{ end }}","description":"{{ range .Alerts }}{{ .Annotations.summary }} (값 {{ printf "%.1f" (index .Values "A") }}, 시작 {{ .StartsAt.Format "15:04:05 MST" }}) {{ end }}"},"metadata":{"threadId":"grafana-{{ .CommonLabels.alertname }}","summary":"Grafana {{ .CommonLabels.alertname }}"}}{{ end }}
+      {{ define "qdev.json" }}{"version":"1.0","source":"custom","content":{"textType":"client-markdown","title":"{{ if eq .Status "firing" }}:rotating_light: Grafana {{ .CommonLabels.severity }}: {{ .CommonLabels.alertname }}{{ else }}:white_check_mark: Grafana 해소: {{ .CommonLabels.alertname }}{{ end }}","description":"{{ range .Alerts }}{{ .Annotations.summary }} (시작 {{ .StartsAt.Format "15:04:05 MST" }}) {{ end }}"},"metadata":{"threadId":"grafana-{{ .CommonLabels.alertname }}","summary":"Grafana {{ .CommonLabels.alertname }}"}}{{ end }}
 
 contactPoints:
   - orgId: 1
@@ -62,7 +64,7 @@ groups:
         execErrState: Error
         labels: { severity: warning }
         annotations:
-          summary: 앱 컨테이너 평균 CPU가 예약의 ${cpu_warning_percent}%를 3분 넘었다
+          summary: '앱 컨테이너 평균 CPU가 예약의 ${cpu_warning_percent}%를 3분 넘었다(현재 {{ printf "%.1f" $values.A.Value }}%)'
 
       - uid: app-cpu-critical
         title: AppCpuCritical
@@ -88,7 +90,7 @@ groups:
         execErrState: Error
         labels: { severity: critical }
         annotations:
-          summary: 앱 컨테이너 평균 CPU가 예약의 ${cpu_critical_percent}%를 3분 넘었다
+          summary: '앱 컨테이너 평균 CPU가 예약의 ${cpu_critical_percent}%를 3분 넘었다(현재 {{ printf "%.1f" $values.A.Value }}%)'
 
       # 수집되는 앱 태스크가 0개(E08 탐지 공백: 태스크 2개 동시 종료 46.5~68.8초 동안 CloudWatch 알람이 울리지 않았다)
       - uid: app-no-target
@@ -115,4 +117,4 @@ groups:
         execErrState: Error
         labels: { severity: critical }
         annotations:
-          summary: 지표를 내는 앱 태스크가 0개다(전체 중단 의심)
+          summary: '지표를 내는 앱 태스크가 {{ printf "%.0f" $values.A.Value }}개다(전체 중단 의심)'
