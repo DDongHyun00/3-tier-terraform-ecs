@@ -1028,10 +1028,11 @@ data "aws_iam_policy_document" "deploy_network_e11" {
   }
 
   # 네임스페이스의 비공개 호스팅 존 생성·조회와, 관제 VPC에서도 그 이름을 풀게 하는 VPC 연결(DEC-55).
-  # 존 ID는 생성 뒤에 정해져 hostedzone/*로 둔다. 공개 존(3tier.link)의 레코드 변경 권한은 compute 정책 그대로다
+  # 존 ID는 생성 뒤에 정해져 hostedzone/*로 둔다. 공개 존(3tier.link)의 레코드 변경 권한은 compute 정책 그대로다.
+  # ListHostedZonesByVPC: Terraform이 존-VPC 연결을 만든 뒤 다시 읽을 때 부른다(리소스 수준 권한 없음, 11/04 apply 403)
   statement {
     sid       = "Route53PrivateZoneCreate"
-    actions   = ["route53:CreateHostedZone", "route53:ListHostedZonesByName"]
+    actions   = ["route53:CreateHostedZone", "route53:ListHostedZonesByName", "route53:ListHostedZonesByVPC"]
     resources = ["*"]
   }
 
