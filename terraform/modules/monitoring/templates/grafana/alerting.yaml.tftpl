@@ -1,0 +1,117 @@
+apiVersion: 1
+
+# Slack 경로: Grafana SNS 연락처 → 기존 알람 토픽 → Amazon Q Developer → Slack(DEC-58).
+# Q Developer는 사용자 정의 알림 형식(version 1.0, source custom, content.description)의 JSON만 Slack에 올린다.
+templates:
+  - orgId: 1
+    name: qdev
+    template: |
+      {{ define "qdev.json" }}{"version":"1.0","source":"custom","content":{"textType":"client-markdown","title":"{{ if eq .Status "firing" }}:rotating_light: Grafana {{ .CommonLabels.severity }}: {{ .CommonLabels.alertname }}{{ else }}:white_check_mark: Grafana 해소: {{ .CommonLabels.alertname }}{{ end }}","description":"{{ range .Alerts }}{{ .Annotations.summary }} (값 {{ printf "%.1f" (index .Values "A") }}, 시작 {{ .StartsAt.Format "15:04:05 MST" }}) {{ end }}"},"metadata":{"threadId":"grafana-{{ .CommonLabels.alertname }}","summary":"Grafana {{ .CommonLabels.alertname }}"}}{{ end }}
+
+contactPoints:
+  - orgId: 1
+    name: sns-slack
+    receivers:
+      - uid: sns-slack
+        type: sns
+        settings:
+          topic_arn: ${alarm_topic_arn}
+          sigv4:
+            region: ${region}
+          subject: "[Grafana] {{ .CommonLabels.alertname }}"
+          message: '{{ template "qdev.json" . }}'
+
+# 알림 지연을 재려고 그룹 대기를 짧게 둔다(CloudWatch 경로와 비교, #96)
+policies:
+  - orgId: 1
+    receiver: sns-slack
+    group_by: ["alertname"]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: app
+    folder: 3tier
+    interval: 15s
+    rules:
+      # 앱 컨테이너 평균 CPU(예약 0.5 vCPU 대비 %). CloudWatch ECS CPUUtilization과 같은 기준이다
+      - uid: app-cpu-warning
+        title: AppCpuWarning
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: avg(rate(container_cpu_usage_seconds_total{container_label_com_amazonaws_ecs_container_name="board"}[1m])) / ${app_cpu_reservation} * 100
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [${cpu_warning_percent}] }
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: 앱 컨테이너 평균 CPU가 예약의 ${cpu_warning_percent}%를 3분 넘었다
+
+      - uid: app-cpu-critical
+        title: AppCpuCritical
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: avg(rate(container_cpu_usage_seconds_total{container_label_com_amazonaws_ecs_container_name="board"}[1m])) / ${app_cpu_reservation} * 100
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [${cpu_critical_percent}] }
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: 앱 컨테이너 평균 CPU가 예약의 ${cpu_critical_percent}%를 3분 넘었다
+
+      # 수집되는 앱 태스크가 0개(E08 탐지 공백: 태스크 2개 동시 종료 46.5~68.8초 동안 CloudWatch 알람이 울리지 않았다)
+      - uid: app-no-target
+        title: AppNoScrapeTarget
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: count(up{job="app"} == 1) or vector(0)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        for: 30s
+        noDataState: Alerting
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: 지표를 내는 앱 태스크가 0개다(전체 중단 의심)

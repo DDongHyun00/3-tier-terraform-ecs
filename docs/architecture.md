@@ -114,6 +114,16 @@ flowchart LR
 - 토픽은 고객 관리형 KMS 키로 암호화했다. CloudWatch 알람은 AWS 관리형 키(aws/sns)로 암호화된 토픽에는 발행하지 못하므로, 키 정책에서 이 계정의 알람(`aws:SourceAccount`, `aws:SourceArn`)에만 데이터 키 사용을 허용했다. 키 로테이션도 켰다.
 - Q Developer API는 서울 리전에 없어서 채널 설정은 us-east-2에 두고 서울 토픽을 연결했다. 채널 가드레일은 기본값(AdministratorAccess) 대신 CloudWatchReadOnlyAccess로 제한했다.
 
+**Grafana 알림(E11 #95, DEC-58·62)**: 관제 Prometheus가 15초마다 수집하고 Grafana가 15초마다 규칙을 평가합니다. 알림은 Grafana SNS 연락처 → 같은 알람 토픽 → Amazon Q Developer → Slack으로, CloudWatch 알람과 경로를 공유합니다. Q Developer는 사용자 정의 알림 형식(`version 1.0`, `source custom`, `content.description`)만 Slack에 올리므로 Grafana 메시지 템플릿이 그 JSON을 만듭니다.
+
+| 규칙 | 식 | 기준 | 심각도 |
+|---|---|---|---|
+| AppCpuWarning | 앱 컨테이너 평균 CPU(예약 0.5 vCPU 대비 %, cAdvisor) | 60% 초과 3분 | warning |
+| AppCpuCritical | 같음 | 80% 초과 3분 | critical |
+| AppNoScrapeTarget | 지표를 내는 앱 태스크 수 | 1 미만 30초 | critical |
+
+AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단) 때 CloudWatch 알람이 울리지 않은 탐지 공백을 메우려는 규칙입니다. CloudWatch 알람 정리(자동 확장 알람 + 비상 2개만 남김)는 Grafana 알림 도착을 실측한 뒤 합니다(DEC-62).
+
 ## 5. 네트워크 설계
 
 ### 5.1 CIDR와 서브넷

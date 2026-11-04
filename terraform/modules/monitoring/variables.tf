@@ -117,3 +117,27 @@ variable "app_discovery_dns_name" {
   description = "앱 태스크 A 레코드 이름(compute 출력). 예: board.3tier-prod.internal"
   type        = string
 }
+
+# ---------- Grafana 대시보드·알림 (#95, DEC-58) ----------
+variable "alarm_topic_arn" {
+  description = "기존 알람 SNS 토픽(bootstrap). Grafana 알림도 여기로 보내 Q Developer → Slack 경로를 같이 쓴다"
+  type        = string
+}
+
+variable "app_cpu_reservation" {
+  description = "앱 태스크 CPU 예약(vCPU). 컨테이너 CPU %를 CloudWatch ECS CPUUtilization과 같은 기준(예약 대비)으로 계산한다"
+  type        = number
+  default     = 0.5
+}
+
+variable "cpu_warning_percent" {
+  description = "앱 CPU 경고 기준(3분 지속)"
+  type        = number
+  default     = 60
+}
+
+variable "cpu_critical_percent" {
+  description = "앱 CPU 심각 기준(3분 지속)"
+  type        = number
+  default     = 80
+}
