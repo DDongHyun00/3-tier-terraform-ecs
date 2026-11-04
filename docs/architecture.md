@@ -94,20 +94,21 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    M[CloudWatch 지표<br/>ALB · ECS · RDS] --> AL[CloudWatch 알람]
-    AL --> SNS[SNS 토픽<br/>3tier-prod-alarms<br/>KMS alias/3tier-alerts]
+    M[CloudWatch 지표<br/>ALB] --> AL[CloudWatch 비상 알람 2개]
+    P[Prometheus 15초 수집<br/>+ CloudWatch RDS 지표] --> G[Grafana 알림 5개]
+    AL --> SNS
+    G --> SNS[SNS 토픽<br/>3tier-prod-alarms<br/>KMS alias/3tier-alerts]
     SNS --> Q[Amazon Q Developer<br/>in chat applications]
     Q --> SL[Slack ddonghyun-ops<br/>#aws-alerts]
     B[AWS Budgets] -->|월 예산 80% · 100%| MAIL[이메일]
 ```
 
+CloudWatch에는 관제 서버가 죽어도 오는 비상 알람 2개와 자동 확장 알람(목표 추적이 만드는 것)만 남겼다(DEC-45·62). ECS CPU·RDS 스토리지·RDS 연결 알람과 CloudWatch 대시보드는 #95 실측 뒤 Grafana로 옮기고 지웠다.
+
 | 알람 | 조건 |
 |---|---|
 | `3tier-prod-alb-5xx-rate` | (ALB 5xx + 앱 5xx) / 요청 > 5%, 5분 중 3분. 분당 요청 10건 미만은 0으로 계산 |
 | `3tier-prod-alb-unhealthy-targets` | 비정상 타깃 ≥ 1, 2분 연속 |
-| `3tier-prod-ecs-cpu-high` | 서비스 평균 CPU > 80%, 5분 중 3분. 결측은 판정에서 뺀다 |
-| `3tier-prod-rds-storage-low` | 여유 스토리지 < 2 GB |
-| `3tier-prod-rds-connections-high` | 연결 수 > 60, 5분 중 3분. 결측은 판정에서 뺀다 |
 
 - 울릴 때와 복구될 때 모두 Slack으로 보내도록 구성했다.
 - 알람은 main(매 세션 생성·삭제)에, SNS 토픽·KMS 키·Q Developer 채널 설정은 bootstrap(상시)에 두었다. Q Developer는 채널 설정을 만들 때 토픽에 구독을 건다. 토픽을 main에 두면 destroy 때 구독이 사라지고 다시 apply해도 되살아나지 않는다.
@@ -121,8 +122,12 @@ flowchart LR
 | AppCpuWarning | 앱 컨테이너 평균 CPU(예약 0.5 vCPU 대비 %, cAdvisor) | 60% 초과 3분 | warning |
 | AppCpuCritical | 같음 | 80% 초과 3분 | critical |
 | AppNoScrapeTarget | 지표를 내는 앱 태스크 수 | 1 미만 30초 | critical |
+| RdsStorageLow | RDS FreeStorageSpace(CloudWatch 데이터 소스, 5분 최솟값) | 2 GB 미만 | critical |
+| RdsConnectionsHigh | RDS DatabaseConnections(CloudWatch 데이터 소스, 1분 최댓값) | 60 초과 3분 | warning |
 
-AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단) 때 CloudWatch 알람이 울리지 않은 탐지 공백을 메우려는 규칙입니다. CloudWatch 알람 정리(자동 확장 알람 + 비상 2개만 남김)는 Grafana 알림 도착을 실측한 뒤 합니다(DEC-62).
+앱 규칙은 10초마다, RDS 규칙은 지표가 1~5분 단위라 1분마다 평가합니다.
+
+AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단) 때 CloudWatch 알람이 울리지 않은 탐지 공백을 메우려는 규칙입니다. 11/04 같은 장애(약 65초 중단)에서 Grafana는 중단 약 50초 뒤 Slack에 알렸고 CloudWatch 알람은 이번에도 울리지 않았습니다. 같은 CPU 부하에서는 Grafana 경고가 4분 10초, CloudWatch CPU 알람이 6분 26초였습니다(실측 기록 DB).
 
 ## 5. 네트워크 설계
 
@@ -280,7 +285,7 @@ terraform/
     ├── monitoring/   관제 SG·수집 포트 규칙(#91), Prometheus·Grafana 서버(#92)
     ├── data/         RDS, Secrets Manager, S3, CloudFront
     ├── compute/      ECS, ALB, ACM, Route 53 레코드, IAM 역할
-    └── observability/ CloudWatch 대시보드·알람(SNS 토픽은 bootstrap), 오토스케일링
+    └── observability/ CloudWatch 비상 알람 2개(SNS 토픽은 bootstrap), 오토스케일링
 ```
 
 - 원격 state는 S3, 잠금은 S3 네이티브 잠금(`use_lockfile = true`, Terraform 1.11+). bootstrap과 main은 같은 버킷의 다른 키를 씁니다.

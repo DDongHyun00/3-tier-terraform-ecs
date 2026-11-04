@@ -141,3 +141,22 @@ variable "cpu_critical_percent" {
   type        = number
   default     = 80
 }
+
+# ---------- RDS 알림 (CloudWatch 데이터 소스, DEC-45·62) ----------
+# CloudWatch 알람에서 옮겨 온 기준이다. RDS 지표는 CloudWatch에만 있어 Grafana CloudWatch 데이터 소스로 읽는다
+variable "db_identifier" {
+  description = "RDS 식별자. CloudWatch 지표 차원 DBInstanceIdentifier 값"
+  type        = string
+}
+
+variable "rds_storage_low_bytes" {
+  description = "RDS 여유 스토리지 알림 기준(바이트). 2 GB"
+  type        = number
+  default     = 2147483648
+}
+
+variable "rds_connections_high" {
+  description = "RDS 연결 수 알림 기준(3분 지속). db.t4g.micro 기본 max_connections(약 80 추정)의 75%. HikariCP 풀 10 × 태스크 수"
+  type        = number
+  default     = 60
+}

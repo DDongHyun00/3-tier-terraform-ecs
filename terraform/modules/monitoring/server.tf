@@ -176,6 +176,9 @@ resource "aws_instance" "server" {
       app_cpu_reservation  = var.app_cpu_reservation
       cpu_warning_percent  = var.cpu_warning_percent
       cpu_critical_percent = var.cpu_critical_percent
+      db_identifier        = var.db_identifier
+      rds_storage_low      = var.rds_storage_low_bytes
+      rds_connections_high = var.rds_connections_high
     })
   }))
   user_data_replace_on_change = true
