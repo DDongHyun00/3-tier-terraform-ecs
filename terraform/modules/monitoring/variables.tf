@@ -160,3 +160,16 @@ variable "rds_connections_high" {
   type        = number
   default     = 60
 }
+
+# ---------- 앱 5xx 알림 (#131) ----------
+variable "http_5xx_rate_percent" {
+  description = "앱 5xx 비율 알림 기준(%, 1분 지속). CloudWatch 비상 알람(ALB 5xx 비율 5%)과 같은 값"
+  type        = number
+  default     = 5
+}
+
+variable "http_5xx_min_requests" {
+  description = "분당 요청이 이보다 적으면 5xx 비율을 0으로 본다(한두 건으로 튀는 오경보 방지)"
+  type        = number
+  default     = 10
+}

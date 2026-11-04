@@ -171,14 +171,16 @@ resource "aws_instance" "server" {
     cadvisor_port       = var.cadvisor_port
     dashboard_json      = file("${path.module}/templates/grafana/dashboard.json")
     alerting_yaml = templatefile("${path.module}/templates/grafana/alerting.yaml.tftpl", {
-      alarm_topic_arn      = var.alarm_topic_arn
-      region               = var.region
-      app_cpu_reservation  = var.app_cpu_reservation
-      cpu_warning_percent  = var.cpu_warning_percent
-      cpu_critical_percent = var.cpu_critical_percent
-      db_identifier        = var.db_identifier
-      rds_storage_low      = var.rds_storage_low_bytes
-      rds_connections_high = var.rds_connections_high
+      alarm_topic_arn       = var.alarm_topic_arn
+      region                = var.region
+      app_cpu_reservation   = var.app_cpu_reservation
+      cpu_warning_percent   = var.cpu_warning_percent
+      cpu_critical_percent  = var.cpu_critical_percent
+      db_identifier         = var.db_identifier
+      rds_storage_low       = var.rds_storage_low_bytes
+      rds_connections_high  = var.rds_connections_high
+      http_5xx_rate_percent = var.http_5xx_rate_percent
+      http_5xx_min_requests = var.http_5xx_min_requests
     })
   }))
   user_data_replace_on_change = true
