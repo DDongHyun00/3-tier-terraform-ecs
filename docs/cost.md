@@ -213,3 +213,29 @@ E10에서 컴퓨트를 Fargate에서 ECS on EC2(t3.small, 인스턴스당 태스
 ### 실제 청구액
 
 Cost Explorer는 하루 안팎 늦게 반영된다. 11/02 EC2 세션(apply 11:40 ~ destroy 14:48, 약 3시간)의 `BoxUsage:t3.small`·`EBS:VolumeUsage.gp3`·`CPUCredits:t3` 항목과 11/01~02 Fargate 세션(E08, 약 1시간 20분)의 `Fargate-vCPU-Hours`·`Fargate-GB-Hours`를 반영 뒤 여기에 적는다(#45와 함께). 기준이 되는 시간은 위 요금표 계산을 그대로 쓴다.
+
+## 6. 관제 VPC·서버 추가 비용 (E11, 요금표 기준)
+
+E11에서 관제 VPC(#91)와 Prometheus·Grafana 서버(#92)를 main에 넣어 세션마다 만든다(DEC-37). 운영 NAT를 리전 NAT로 바꾼 것(DEC-41)은 AZ당 시간 요금이 같아 비용이 그대로다. 요금은 AWS Price List API(서울, 2026-11-02 조회) 기준이고, 소수 셋째 자리 반올림(1절 규칙)이다.
+
+| 항목 | 시간당 (USD) | 근거 |
+|---|---|---|
+| 관제 영역 NAT 1개 + EIP 1개 | 0.064 | NAT 0.059 + 퍼블릭 IPv4 0.005(4절과 같은 단가) |
+| 관제 서버 t4g.small | 0.021 | 온디맨드 0.0208(DEC-54) |
+| 루트 볼륨 gp3 20 GB | 0.002 | 0.0912 USD/GB-월 × 20 ÷ 730 = 0.0025 |
+| VPC 피어링 | 0 | 연결 자체는 무료. AZ 간 전송만 GB당 0.01 USD(수집 트래픽은 세션당 수십 MB) |
+| S3 게이트웨이 엔드포인트 | 0 | 추가 요금 없음 |
+| Secrets Manager 비밀 1개 | 약 0.001 | 월 0.40 USD를 시간으로 나눔 |
+| **관제 소계** | **0.088** | |
+| 운영(5절 v2 기준) | 0.267 | |
+| **합계** | **0.355** | 관제가 약 25% |
+
+| 기준 | v2 (E10) | v2 + 관제 (E11) |
+|---|---|---|
+| 8시간 세션 1회 | 2.136 | 2.840 |
+| 세션만 가동 (월 80시간) | 21.36 | 28.40 |
+| 24시간 가동 (월 730시간) | 194.91 | 259.15 |
+
+관제 비용의 73%가 NAT다. 관제 서버가 밖으로 나가는 이유는 이미지 풀(Docker Hub·GitHub)과 AWS API(EC2·SSM·Secrets Manager·CloudWatch)다. 이미지를 ECR로 옮기고 인터페이스 엔드포인트를 쓰면 NAT를 없앨 수 있지만, 엔드포인트 4~5개 × AZ 요금이 NAT 1개보다 비싸서(DEC-41) 이 규모에서는 NAT를 뒀다.
+
+#95에서 CloudWatch 알람 3개(ECS CPU, RDS 스토리지, RDS 연결)와 대시보드 1개를 지웠다. 알람은 표준 해상도 지표당 월 0.10 USD(Price List API, 서울), 대시보드는 계정당 3개까지 무료라 줄어든 금액은 월 0.30 USD 남짓이다. 대신 Grafana의 RDS 규칙 2개가 CloudWatch `GetMetricData`를 1분마다 부른다(지표 1,000개당 0.01 USD → 24시간 가동 기준 월 약 0.86 USD, 세션만 가동이면 약 0.10 USD). CloudWatch와 직접 설치의 비용·지연 비교는 [monitoring.md](monitoring.md)에 따로 적었다.

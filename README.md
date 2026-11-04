@@ -35,6 +35,7 @@ Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS → RDS)에 Terraform
 
 - [아키텍처 설계](docs/architecture.md): CIDR·서브넷·SG·IAM·태그 규칙, 다이어그램
 - [비용 리포트](docs/cost.md): 월 예상 비용, 최적화 전후, 항목별 절감 판단, NAT Gateway 트레이드오프
+- [관측 비교](docs/monitoring.md): CloudWatch vs Prometheus·Grafana 알림 지연 실측, 비용 손익분기, 운영 부담
 - [장애 재현 기록](docs/troubleshooting/): 태스크 강제 종료, 잘못된 이미지 롤백, DB 연결 실패, 컨테이너 인스턴스 종료 (증상 → 원인 → 해결 → 재발 방지)
 - [프로젝트 히스토리 (Notion)](https://app.notion.com/p/3f4330bd3846812395f4d19208283e9c): 에픽별 서사, 결정 기록(ADR), 트러블슈팅
 - 작업 추적: [Issues](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues) · [Milestones](https://github.com/DDongHyun00/3-tier-terraform-ecs/milestones) · [Project 보드](https://github.com/users/DDongHyun00/projects/11)
