@@ -117,7 +117,6 @@ resource "aws_instance" "server" {
     volume_size           = var.root_volume_size
     encrypted             = true
     delete_on_termination = true
-    tags                  = { Name = "${var.name_prefix}-prometheus-root" }
   }
 
   user_data = templatefile("${path.module}/templates/user_data.sh.tftpl", {
