@@ -1,6 +1,12 @@
-# 앱 배포 (#32). main에 app/** 변경이 머지되면 이미지를 빌드해 ECR에 올리고 ECS 서비스를 롤링 배포한다.
-# 자격 증명은 OIDC로 3tier-github-deploy 역할을 수임한다. 액세스 키 없음.
-# 태스크 정의는 현재 리비전을 내려받아 이미지만 바꿔 새 리비전으로 등록한다(GitHub 공식 가이드 방식).
+# 앱 배포 (#32 → #102 승인 배포). main에 app/** 변경이 머지되면
+#   1) build: 이미지를 한 번만 빌드해 ECR에 올린다(태그 = 커밋 SHA 앞 7자리)
+#   2) staging: 같은 이미지를 스테이징에 롤링 배포하고 스모크 테스트(health 200, /posts 200)
+#   3) production: GitHub Environment "production"의 필수 승인을 기다린 뒤, 같은 이미지를 운영에 롤링 배포
+# 다시 빌드하지 않으므로 스테이징에서 검증한 바이너리가 그대로 운영에 간다(DEC-61).
+# 스테이징이 꺼져 있으면(평소, DEC-42) staging 단계는 배포·검증 없이 건너뛰고 요약에 남긴다. 승인 단계는 항상 거친다.
+# 자격 증명은 OIDC. build는 운영 역할(ref:main), staging은 스테이징 역할(environment:staging),
+# production은 운영 역할(environment:production)을 수임한다. 액세스 키 없음.
+# 태스크 정의는 각 환경의 최신 리비전을 내려받아 이미지만 바꿔 새 리비전으로 등록한다.
 # Terraform은 서비스의 task_definition 변경을 무시하므로(ignore_changes) 이 배포를 되돌리지 않는다.
 name: deploy
 
@@ -15,7 +21,7 @@ permissions:
   contents: read
   id-token: write # OIDC 토큰 발급
 
-# 배포는 한 번에 하나만. 겹치면 뒤의 것이 기다린다
+# 배포는 한 번에 하나만. 겹치면 뒤의 것이 기다린다(승인 대기 중인 실행도 포함)
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
@@ -23,22 +29,21 @@ concurrency:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: 3tier/board
-  ECS_CLUSTER: 3tier-prod-cluster
-  ECS_SERVICE: 3tier-prod-board
-  TASK_FAMILY: 3tier-prod-board
   CONTAINER_NAME: board
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+      t_built: ${{ steps.done.outputs.t }}
     steps:
       - uses: actions/checkout@v4
 
       - name: start timer
         run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
-      # 계정 ID는 Secret으로 두어야 단계 머리 env 출력까지 가려진다(#59). vars나 env로 넘기면 마스크보다 먼저 로그에 찍힌다.
-      # ECR 레지스트리 주소와 태스크 정의 ARN에 든 계정 ID도 같은 Secret 값이라 함께 가려진다
+      # 계정 ID는 Secret으로 두어야 단계 머리 env 출력까지 가려진다(#59)
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy
@@ -50,11 +55,15 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: image tag = commit SHA 앞 7자리
-        run: echo "IMAGE=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+        id: tag
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${GITHUB_SHA::7}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
-      # provenance=false: 증명 매니페스트 없이 이미지 하나만 올린다(ECR 스캔·콘솔이 깔끔). 캐시는 GitHub Actions 캐시
+      # provenance=false: 증명 매니페스트 없이 이미지 하나만 올린다. 캐시는 GitHub Actions 캐시(mode=min, #36)
       - name: build and push
         uses: docker/build-push-action@v6
         with:
@@ -63,17 +72,105 @@ jobs:
           tags: ${{ env.IMAGE }}
           provenance: false
           cache-from: type=gha
-          # mode=max는 매 커밋 바뀌는 빌더 중간층 약 263 MiB를 매번 저장해 #36에서 내보내기만 2분 36초가 걸려 min으로 바꿨다
           cache-to: type=gha,mode=min
 
       - name: push done
-        run: echo "T1=$(date +%s)" >> "$GITHUB_ENV"
+        id: done
+        run: |
+          echo "t=$(date +%s)" >> "$GITHUB_OUTPUT"
+          echo "## build ${GITHUB_SHA::7}: $(( $(date +%s) - T0 ))초" >> "$GITHUB_STEP_SUMMARY"
+
+  staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      ECS_CLUSTER: 3tier-staging-cluster
+      ECS_SERVICE: 3tier-staging-board
+      TASK_FAMILY: 3tier-staging-board
+      SITE: https://staging.3tier.link
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy-staging
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      # 스테이징은 필요한 세션에만 켠다(DEC-42). 서비스가 없으면 이 단계는 건너뛰었다고 남기고 성공으로 끝낸다
+      - name: is staging up?
+        id: up
+        run: |
+          STATUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].status' --output text 2>/dev/null || echo NONE)
+          if [ "$STATUS" = "ACTIVE" ]; then echo "up=true" >> "$GITHUB_OUTPUT"; else
+            echo "up=false" >> "$GITHUB_OUTPUT"
+            echo "## staging: 꺼져 있음(서비스 ${STATUS}) → 배포·스모크 테스트 건너뜀" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: download current task definition
+        if: steps.up.outputs.up == 'true'
+        run: |
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" --query taskDefinition > task-definition.json
+
+      - name: render new task definition
+        if: steps.up.outputs.up == 'true'
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ needs.build.outputs.image }}
+
+      - name: deploy to staging
+        if: steps.up.outputs.up == 'true'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+          wait-max-delay-seconds: 15
+
+      # 스모크 테스트: liveness(앱 기동)와 /posts(DB까지 왕복). 롤링 직후 ALB 등록이 늦을 수 있어 몇 번 재시도한다
+      - name: smoke test
+        if: steps.up.outputs.up == 'true'
+        run: |
+          check() {
+            for i in $(seq 1 10); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$SITE$1")
+              [ "$code" = "200" ] && { echo "$1 200"; return 0; }
+              echo "$1 $code (retry $i)"; sleep 6
+            done
+            return 1
+          }
+          check /actuator/health/liveness
+          check /posts
+          echo "## staging: 배포·스모크 통과 $(( $(date +%s) - T0 ))초" >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    needs: [build, staging]
+    runs-on: ubuntu-latest
+    # 필수 승인자는 GitHub Environment 설정에서 지정한다. 승인 전에는 이 잡이 시작되지 않는다
+    environment: production
+    env:
+      ECS_CLUSTER: 3tier-prod-cluster
+      ECS_SERVICE: 3tier-prod-board
+      TASK_FAMILY: 3tier-prod-board
+    steps:
+      - name: start timer
+        run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
 
       # 현재 서비스가 쓰는 태스크 정의(최신 리비전)를 내려받는다. CPU·메모리·환경 변수는 그대로, 이미지만 바뀐다
       - name: download current task definition
-        run: |
-          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
-            --query taskDefinition > task-definition.json
+        run: aws ecs describe-task-definition --task-definition "$TASK_FAMILY" --query taskDefinition > task-definition.json
 
       - name: render new task definition
         id: render
@@ -81,11 +178,11 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.IMAGE }}
+          image: ${{ needs.build.outputs.image }}
 
       # 새 리비전 등록 → 서비스 갱신 → 롤링(100/200) 완료까지 대기. 서킷 브레이커가 롤백하면 여기서 실패한다
-      # 폴링 간격 상한 15초: 상한이 없으면 SDK 기본 600초까지 간격이 늘어 #36에서 롤백 완료 8분 33초 뒤에 알았다
-      - name: deploy to ECS
+      # 폴링 간격 상한 15초(#36: 상한이 없으면 SDK 기본 600초까지 늘어 롤백을 8분 33초 늦게 알았다)
+      - name: deploy to production
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render.outputs.task-definition }}
@@ -100,10 +197,9 @@ jobs:
         run: |
           T2=$(date +%s)
           {
-            echo "## deploy ${GITHUB_SHA::7}"
+            echo "## production ${GITHUB_SHA::7}"
             echo "| 구간 | 초 |"
             echo "|---|---|"
-            echo "| 빌드·push | $((T1 - T0)) |"
-            echo "| ECS 롤링(안정화까지) | $((T2 - T1)) |"
-            echo "| 전체 | $((T2 - T0)) |"
+            echo "| 빌드 끝 → 운영 롤링 끝(승인 대기 포함) | $((T2 - ${{ needs.build.outputs.t_built }})) |"
+            echo "| 운영 롤링(안정화까지) | $((T2 - T0)) |"
           } >> "$GITHUB_STEP_SUMMARY"
