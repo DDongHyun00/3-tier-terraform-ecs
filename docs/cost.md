@@ -239,3 +239,18 @@ E11에서 관제 VPC(#91)와 Prometheus·Grafana 서버(#92)를 main에 넣어 �
 관제 비용의 73%가 NAT다. 관제 서버가 밖으로 나가는 이유는 이미지 풀(Docker Hub·GitHub)과 AWS API(EC2·SSM·Secrets Manager·CloudWatch)다. 이미지를 ECR로 옮기고 인터페이스 엔드포인트를 쓰면 NAT를 없앨 수 있지만, 엔드포인트 4~5개 × AZ 요금이 NAT 1개보다 비싸서(DEC-41) 이 규모에서는 NAT를 뒀다.
 
 #95에서 CloudWatch 알람 3개(ECS CPU, RDS 스토리지, RDS 연결)와 대시보드 1개를 지웠다. 알람은 표준 해상도 지표당 월 0.10 USD(Price List API, 서울), 대시보드는 계정당 3개까지 무료라 줄어든 금액은 월 0.30 USD 남짓이다. 대신 Grafana의 RDS 규칙 2개가 CloudWatch `GetMetricData`를 1분마다 부른다(지표 1,000개당 0.01 USD → 24시간 가동 기준 월 약 0.86 USD, 세션만 가동이면 약 0.10 USD). CloudWatch와 직접 설치의 비용·지연 비교는 [monitoring.md](monitoring.md)에 따로 적었다.
+
+## 7. 중앙 로그 서버 추가 비용 (E12, 요금표 기준)
+
+E12에서 관제 VPC에 ELK 서버(#97)를 더했다. 관제 VPC의 NAT·피어링은 6절과 같이 쓴다. FireLens 사이드카는 앱 태스크의 메모리 예약(50 MiB) 안이라 추가 요금이 없다.
+
+| 항목 | 시간당 (USD) | 근거 |
+|---|---|---|
+| ELK 서버 t4g.medium | 0.042 | 온디맨드 0.0416(Price List API, 2026-11-05) |
+| 루트 볼륨 gp3 30 GB | 0.004 | 0.0912 × 30 ÷ 730 = 0.0037 |
+| Secrets Manager 비밀 2개 | 약 0.001 | 월 0.40 × 2 ÷ 730 |
+| **로그 소계** | **0.047** | |
+| 운영 + 관제(6절) | 0.355 | |
+| **합계** | **0.402** | 8시간 세션 약 3.2달러 |
+
+CloudWatch Logs·Loki와의 비교는 [logging.md](logging.md) 3절에 적었다.
