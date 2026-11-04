@@ -61,3 +61,9 @@ variable "account_suffix" {
   description = "AWS 계정 ID 뒤 4자리. S3 버킷 이름을 전역에서 유일하게 만드는 접미사"
   type        = string
 }
+
+variable "assets_bucket_prefix" {
+  description = "첨부파일 버킷 이름 앞부분(<접두사>-<계정 접미사>). 운영 3tier-assets, 스테이징 3tier-staging-assets(배포 역할 정책 deploy_envs와 같은 이름)"
+  type        = string
+  default     = "3tier-assets"
+}

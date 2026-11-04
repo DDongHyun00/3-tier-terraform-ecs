@@ -14,14 +14,31 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 locals {
-  account     = data.aws_caller_identity.current.account_id
-  region      = data.aws_region.current.region
-  main_prefix = "3tier-prod" # terraform/main의 name_prefix (3tier-<env>)
+  account = data.aws_caller_identity.current.account_id
+  region  = data.aws_region.current.region
+  # 환경별 배포 역할(DEC-63): 운영(terraform/main)과 스테이징(terraform/staging)이 같은 정책 문서를 이름 접두사·state 키만 바꿔 쓴다.
+  # 운영 키는 기존 리소스 주소(정책 이름 3tier-github-deploy-<이름>)가 바뀌지 않게 접두사 없이 둔다
+  deploy_envs = {
+    prod = {
+      prefix            = "3tier-prod" # terraform/main의 name_prefix
+      state_key         = "main"
+      assets_bucket     = "3tier-assets-${var.account_suffix}"
+      boundary_name     = "3tier-ecs-boundary" # modules/compute·monitoring·logging이 같은 이름으로 참조한다
+      policy_key_prefix = ""
+    }
+    staging = {
+      prefix            = "3tier-staging" # terraform/staging의 name_prefix
+      state_key         = "staging"
+      assets_bucket     = "3tier-staging-assets-${var.account_suffix}"
+      boundary_name     = "3tier-staging-ecs-boundary"
+      policy_key_prefix = "staging-"
+    }
+  }
+  main_prefix   = local.deploy_envs.prod.prefix # alerts.tf·fis.tf가 쓰는 운영 접두사
+  boundary_arns = [for e in local.deploy_envs : "arn:aws:iam::${local.account}:policy/${e.boundary_name}"]
 
   project_tag = "3-tier-terraform-ecs" # provider default_tags의 Project 값
 
-  ecs_boundary_name = "3tier-ecs-boundary" # modules/compute/iam.tf가 같은 이름으로 참조한다
-  ecs_boundary_arn  = "arn:aws:iam::${local.account}:policy/${local.ecs_boundary_name}"
 
   # EC2 리소스는 ID로만 식별돼 이름으로 좁힐 수 없다. 리전·계정·리소스 종류까지는 고정한다
   ec2_arns = [
@@ -33,6 +50,8 @@ locals {
 # ---------- permissions boundary: main이 만드는 ECS 역할의 권한 상한 ----------
 # 실행 역할(이미지 풀·로그·시크릿 주입)과 태스크 역할(assets 객체 읽기·쓰기)이 쓰는 것만.
 data "aws_iam_policy_document" "ecs_boundary" {
+  for_each = local.deploy_envs
+
   statement {
     sid       = "EcrAuth"
     actions   = ["ecr:GetAuthorizationToken"]
@@ -48,13 +67,13 @@ data "aws_iam_policy_document" "ecs_boundary" {
   statement {
     sid       = "Logs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["arn:aws:logs:${local.region}:${local.account}:log-group:/ecs/${local.main_prefix}-*"]
+    resources = ["arn:aws:logs:${local.region}:${local.account}:log-group:/ecs/${each.value.prefix}-*"]
   }
 
   statement {
     sid       = "DbSecret"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = ["arn:aws:secretsmanager:${local.region}:${local.account}:secret:${local.main_prefix}-*"]
+    resources = ["arn:aws:secretsmanager:${local.region}:${local.account}:secret:${each.value.prefix}-*"]
   }
 
   statement {
@@ -72,7 +91,7 @@ data "aws_iam_policy_document" "ecs_boundary" {
   statement {
     sid       = "AssetsObjects"
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["arn:aws:s3:::3tier-assets-${var.account_suffix}/*"]
+    resources = ["arn:aws:s3:::${each.value.assets_bucket}/*"]
   }
 
   # ECS on EC2(#87): 컨테이너 인스턴스 역할이 쓰는 ECS 에이전트 작업. AmazonEC2ContainerServiceforEC2Role의 작업과 같고 클러스터는 이 프로젝트 것만
@@ -95,8 +114,8 @@ data "aws_iam_policy_document" "ecs_boundary" {
       "ecs:ListTagsForResource",
     ]
     resources = [
-      "arn:aws:ecs:${local.region}:${local.account}:cluster/${local.main_prefix}-*",
-      "arn:aws:ecs:${local.region}:${local.account}:container-instance/${local.main_prefix}-*/*",
+      "arn:aws:ecs:${local.region}:${local.account}:cluster/${each.value.prefix}-*",
+      "arn:aws:ecs:${local.region}:${local.account}:container-instance/${each.value.prefix}-*/*",
     ]
   }
 
@@ -145,7 +164,7 @@ data "aws_iam_policy_document" "ecs_boundary" {
   statement {
     sid       = "MonitoringAlertPublish"
     actions   = ["sns:Publish", "sns:GetTopicAttributes"]
-    resources = ["arn:aws:sns:${local.region}:${local.account}:${local.main_prefix}-*"]
+    resources = ["arn:aws:sns:${local.region}:${local.account}:${each.value.prefix}-*"]
   }
 
   statement {
@@ -171,13 +190,24 @@ data "aws_iam_policy_document" "ecs_boundary" {
 }
 
 resource "aws_iam_policy" "ecs_boundary" {
-  name        = local.ecs_boundary_name
-  description = "Permissions boundary for ECS roles created by the deploy role (#35)"
-  policy      = data.aws_iam_policy_document.ecs_boundary.json
+  for_each = local.deploy_envs
+
+  name = each.value.boundary_name
+  # 설명은 바꾸면 정책이 교체된다(역할에 붙은 boundary는 지울 수 없어 apply 실패). 운영은 기존 문구 그대로
+  description = each.key == "prod" ? "Permissions boundary for ECS roles created by the deploy role (#35)" : "Permissions boundary for ECS roles created by the ${each.key} deploy role (#35, DEC-63)"
+  policy      = data.aws_iam_policy_document.ecs_boundary[each.key].json
+}
+
+# 환경별로 나누면서 운영 boundary의 주소만 바뀐다(이름·내용 그대로)
+moved {
+  from = aws_iam_policy.ecs_boundary
+  to   = aws_iam_policy.ecs_boundary["prod"]
 }
 
 # ---------- 1. state 버킷 + ECR (모든 워크플로) ----------
 data "aws_iam_policy_document" "deploy_state_ecr" {
+  for_each = local.deploy_envs
+
   statement {
     sid       = "TfStateList"
     actions   = ["s3:ListBucket"]
@@ -188,7 +218,7 @@ data "aws_iam_policy_document" "deploy_state_ecr" {
   statement {
     sid       = "TfStateMain"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-    resources = ["${aws_s3_bucket.tfstate.arn}/main/*"]
+    resources = ["${aws_s3_bucket.tfstate.arn}/${each.value.state_key}/*"]
   }
 
   # 리소스 수준 권한을 지원하지 않는 작업이라 *
@@ -218,6 +248,8 @@ data "aws_iam_policy_document" "deploy_state_ecr" {
 
 # ---------- 2. 네트워크 (EC2) ----------
 data "aws_iam_policy_document" "deploy_network" {
+  for_each = local.deploy_envs
+
   # Describe는 리소스 수준 권한을 지원하지 않아 *
   # GetSecurityGroupsForVpc: ALB 생성 때 ELB가 이 역할로 호출한다(invokedBy, Access Analyzer 대조로 확인)
   statement {
@@ -319,6 +351,8 @@ data "aws_iam_policy_document" "deploy_network" {
 
 # ---------- 3. 컴퓨트 (ECS, ELB, ACM, Route 53, Logs, IAM) ----------
 data "aws_iam_policy_document" "deploy_compute" {
+  for_each = local.deploy_envs
+
   # 조회 작업과 태스크 정의 등록·해제는 리소스 수준 권한이 없거나 제한적이라 *
   statement {
     sid = "EcsReadAndTaskDef"
@@ -349,10 +383,10 @@ data "aws_iam_policy_document" "deploy_compute" {
       "ecs:PutClusterCapacityProviders",
     ]
     resources = [
-      "arn:aws:ecs:${local.region}:${local.account}:cluster/${local.main_prefix}-*",
-      "arn:aws:ecs:${local.region}:${local.account}:service/${local.main_prefix}-*/*",
-      "arn:aws:ecs:${local.region}:${local.account}:task-definition/${local.main_prefix}-*:*",
-      "arn:aws:ecs:${local.region}:${local.account}:capacity-provider/${local.main_prefix}-*",
+      "arn:aws:ecs:${local.region}:${local.account}:cluster/${each.value.prefix}-*",
+      "arn:aws:ecs:${local.region}:${local.account}:service/${each.value.prefix}-*/*",
+      "arn:aws:ecs:${local.region}:${local.account}:task-definition/${each.value.prefix}-*:*",
+      "arn:aws:ecs:${local.region}:${local.account}:capacity-provider/${each.value.prefix}-*",
     ]
   }
 
@@ -382,9 +416,9 @@ data "aws_iam_policy_document" "deploy_compute" {
       "elasticloadbalancing:RemoveTags",
     ]
     resources = [
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:loadbalancer/app/${local.main_prefix}-*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:targetgroup/${local.main_prefix}-*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener/app/${local.main_prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:loadbalancer/app/${each.value.prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:targetgroup/${each.value.prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener/app/${each.value.prefix}-*",
     ]
   }
 
@@ -454,7 +488,7 @@ data "aws_iam_policy_document" "deploy_compute" {
       "logs:UntagResource",
       "logs:TagLogGroup",
     ]
-    resources = ["arn:aws:logs:${local.region}:${local.account}:log-group:/ecs/${local.main_prefix}-*"]
+    resources = ["arn:aws:logs:${local.region}:${local.account}:log-group:/ecs/${each.value.prefix}-*"]
   }
 
   # 역할 생성과 권한 부여는 boundary가 붙은 역할에만. boundary 없는 역할(이 역할 자신 포함)에는 정책을 넣거나 붙일 수 없다
@@ -467,12 +501,12 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:AttachRolePolicy",
       "iam:DetachRolePolicy",
     ]
-    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${each.value.prefix}-*"]
 
     condition {
       test     = "StringEquals"
       variable = "iam:PermissionsBoundary"
-      values   = [local.ecs_boundary_arn]
+      values   = ["arn:aws:iam::${local.account}:policy/${each.value.boundary_name}"]
     }
   }
 
@@ -491,7 +525,7 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:ListInstanceProfilesForRole",
       "iam:GetRolePolicy",
     ]
-    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${each.value.prefix}-*"]
   }
 
   statement {
@@ -507,7 +541,7 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:TagPolicy",
       "iam:UntagPolicy",
     ]
-    resources = ["arn:aws:iam::${local.account}:policy/${local.main_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:policy/${each.value.prefix}-*"]
   }
 
   # 이 역할 자신, 이 역할의 정책, boundary는 어떤 Allow가 있어도 고칠 수 없다(권한 상승·신뢰 조건 확대 차단)
@@ -534,22 +568,24 @@ data "aws_iam_policy_document" "deploy_compute" {
       "iam:TagPolicy",
       "iam:UntagPolicy",
     ]
-    resources = [
-      aws_iam_role.github_deploy.arn,
+    # 운영·스테이징 배포 역할과 그 정책, 두 boundary 모두(어느 환경 역할도 서로를 고치지 못한다)
+    resources = concat([
+      "arn:aws:iam::${local.account}:role/3tier-github-deploy*",
       "arn:aws:iam::${local.account}:policy/3tier-github-deploy*",
-      local.ecs_boundary_arn,
-    ]
+    ], local.boundary_arns)
   }
 }
 
 # ---------- 3b. 컴퓨트: ECS on EC2 (#87, #88) ----------
 # 시작 템플릿·ASG·인스턴스 프로필·AMI 조회. compute 정책이 관리형 정책 한도(6,144자)를 넘어 따로 뒀다
 data "aws_iam_policy_document" "deploy_compute_ec2" {
+  for_each = local.deploy_envs
+
   # 컨테이너 인스턴스 역할을 EC2(인스턴스 프로필)에 넘길 때. ECS 태스크용 PassRole과 서비스 조건이 달라 문장을 나눈다
   statement {
     sid       = "PassRoleToEc2"
     actions   = ["iam:PassRole"]
-    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${each.value.prefix}-*"]
 
     condition {
       test     = "StringEquals"
@@ -569,7 +605,7 @@ data "aws_iam_policy_document" "deploy_compute_ec2" {
       "iam:TagInstanceProfile",
       "iam:UntagInstanceProfile",
     ]
-    resources = ["arn:aws:iam::${local.account}:instance-profile/${local.main_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:instance-profile/${each.value.prefix}-*"]
   }
 
   # 조회는 리소스 수준 권한이 없어 *
@@ -589,7 +625,7 @@ data "aws_iam_policy_document" "deploy_compute_ec2" {
       "autoscaling:CreateOrUpdateTags",
       "autoscaling:DeleteTags",
     ]
-    resources = ["arn:aws:autoscaling:${local.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${local.main_prefix}-*"]
+    resources = ["arn:aws:autoscaling:${local.region}:${local.account}:autoScalingGroup:*:autoScalingGroupName/${each.value.prefix}-*"]
   }
 
   # 시작 템플릿. 생성 때 이름이 ARN에 없어(lt-ID) 리전만 고정하고, 삭제·수정은 프로젝트 태그가 붙은 것만
@@ -654,7 +690,7 @@ data "aws_iam_policy_document" "deploy_compute_ec2" {
   statement {
     sid       = "PassRoleToEcsTasks"
     actions   = ["iam:PassRole"]
-    resources = ["arn:aws:iam::${local.account}:role/${local.main_prefix}-*"]
+    resources = ["arn:aws:iam::${local.account}:role/${each.value.prefix}-*"]
 
     condition {
       test     = "StringEquals"
@@ -666,6 +702,8 @@ data "aws_iam_policy_document" "deploy_compute_ec2" {
 
 # ---------- 4. 데이터 (RDS, Secrets Manager, KMS, S3 assets, CloudFront) ----------
 data "aws_iam_policy_document" "deploy_data" {
+  for_each = local.deploy_envs
+
   statement {
     sid       = "RdsRead"
     actions   = ["rds:Describe*", "rds:ListTagsForResource"]
@@ -686,8 +724,8 @@ data "aws_iam_policy_document" "deploy_data" {
       "rds:RemoveTagsFromResource",
     ]
     resources = [
-      "arn:aws:rds:${local.region}:${local.account}:db:db-${local.main_prefix}*",
-      "arn:aws:rds:${local.region}:${local.account}:subgrp:db-${local.main_prefix}*",
+      "arn:aws:rds:${local.region}:${local.account}:db:db-${each.value.prefix}*",
+      "arn:aws:rds:${local.region}:${local.account}:subgrp:db-${each.value.prefix}*",
       "arn:aws:rds:${local.region}:${local.account}:pg:default.*",
       "arn:aws:rds:${local.region}:${local.account}:og:default:*",
     ]
@@ -708,7 +746,7 @@ data "aws_iam_policy_document" "deploy_data" {
       "secretsmanager:TagResource",
       "secretsmanager:UntagResource",
     ]
-    resources = ["arn:aws:secretsmanager:${local.region}:${local.account}:secret:${local.main_prefix}-*"]
+    resources = ["arn:aws:secretsmanager:${local.region}:${local.account}:secret:${each.value.prefix}-*"]
   }
 
   # AWS 관리형 키(aws/secretsmanager, aws/rds)는 키 ID로 지정할 수 없어 *. 대신 두 서비스를 거친 호출만
@@ -746,14 +784,14 @@ data "aws_iam_policy_document" "deploy_data" {
       "s3:PutBucketPublicAccessBlock",
       "s3:PutBucketTagging",
     ]
-    resources = ["arn:aws:s3:::3tier-assets-${var.account_suffix}"]
+    resources = ["arn:aws:s3:::${each.value.assets_bucket}"]
   }
 
   # force_destroy: 객체가 남아 있어도 버킷을 지울 수 있게
   statement {
     sid       = "AssetsObjectsDelete"
     actions   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
-    resources = ["arn:aws:s3:::3tier-assets-${var.account_suffix}/*"]
+    resources = ["arn:aws:s3:::${each.value.assets_bucket}/*"]
   }
 
   # 캐시 정책 조회(읽기 전용). s3.tf가 AWS 관리형 Managed-CachingOptimized를 이름으로 찾으므로
@@ -795,6 +833,8 @@ data "aws_iam_policy_document" "deploy_data" {
 
 # ---------- 5. 관측성 (E07: Application Auto Scaling, CloudWatch 알람·대시보드, SNS) ----------
 data "aws_iam_policy_document" "deploy_observability" {
+  for_each = local.deploy_envs
+
   # 조회와 정책 작업은 리소스 수준 권한이 없거나 제한적이라 *
   statement {
     sid = "AutoScalingRead"
@@ -851,7 +891,7 @@ data "aws_iam_policy_document" "deploy_observability" {
       "cloudwatch:ListTagsForResource",
     ]
     resources = [
-      "arn:aws:cloudwatch:${local.region}:${local.account}:alarm:${local.main_prefix}-*",
+      "arn:aws:cloudwatch:${local.region}:${local.account}:alarm:${each.value.prefix}-*",
       "arn:aws:cloudwatch:${local.region}:${local.account}:alarm:TargetTracking-*",
     ]
   }
@@ -860,7 +900,7 @@ data "aws_iam_policy_document" "deploy_observability" {
   statement {
     sid       = "Dashboard"
     actions   = ["cloudwatch:PutDashboard", "cloudwatch:GetDashboard", "cloudwatch:DeleteDashboards"]
-    resources = ["arn:aws:cloudwatch::${local.account}:dashboard/${local.main_prefix}-*"]
+    resources = ["arn:aws:cloudwatch::${local.account}:dashboard/${each.value.prefix}-*"]
   }
 
   # 알람 토픽은 bootstrap에 있고(alerts.tf) main은 이름으로 찾는다(data 소스). 목록 조회는 리소스 수준 권한이 없어 *
@@ -886,7 +926,7 @@ data "aws_iam_policy_document" "deploy_observability" {
       "sns:UntagResource",
       "sns:ListTagsForResource",
     ]
-    resources = ["arn:aws:sns:${local.region}:${local.account}:${local.main_prefix}-*"]
+    resources = ["arn:aws:sns:${local.region}:${local.account}:${each.value.prefix}-*"]
   }
 }
 
@@ -903,6 +943,8 @@ locals {
 }
 
 data "aws_iam_policy_document" "deploy_network_e11" {
+  for_each = local.deploy_envs
+
   # 피어링 생성·수락. 같은 계정·리전이라 aws_vpc_peering_connection(auto_accept)이 두 작업을 함께 부른다
   statement {
     sid = "VpcPeeringCreateAndAccept"
@@ -1059,21 +1101,33 @@ data "aws_iam_policy_document" "deploy_network_e11" {
       "elasticloadbalancing:RemoveTags",
     ]
     resources = [
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener/app/${local.main_prefix}-*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener-rule/app/${local.main_prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener/app/${each.value.prefix}-*",
+      "arn:aws:elasticloadbalancing:${local.region}:${local.account}:listener-rule/app/${each.value.prefix}-*",
     ]
   }
 }
 
 locals {
-  deploy_policies = {
-    state-ecr     = data.aws_iam_policy_document.deploy_state_ecr.json
-    network       = data.aws_iam_policy_document.deploy_network.json
-    compute       = data.aws_iam_policy_document.deploy_compute.json
-    data          = data.aws_iam_policy_document.deploy_data.json
-    observability = data.aws_iam_policy_document.deploy_observability.json
-    compute-ec2   = data.aws_iam_policy_document.deploy_compute_ec2.json
-    network-e11   = data.aws_iam_policy_document.deploy_network_e11.json
+  deploy_policy_docs = {
+    state-ecr     = data.aws_iam_policy_document.deploy_state_ecr
+    network       = data.aws_iam_policy_document.deploy_network
+    compute       = data.aws_iam_policy_document.deploy_compute
+    data          = data.aws_iam_policy_document.deploy_data
+    observability = data.aws_iam_policy_document.deploy_observability
+    compute-ec2   = data.aws_iam_policy_document.deploy_compute_ec2
+    network-e11   = data.aws_iam_policy_document.deploy_network_e11
+  }
+
+  # 키: 운영은 "compute", 스테이징은 "staging-compute". 운영 정책 이름·주소는 그대로다
+  deploy_policies = merge([
+    for env, cfg in local.deploy_envs : {
+      for name, doc in local.deploy_policy_docs : "${cfg.policy_key_prefix}${name}" => { env = env, json = doc[env].json }
+    }
+  ]...)
+
+  deploy_role_names = {
+    prod    = aws_iam_role.github_deploy.name
+    staging = aws_iam_role.github_deploy_staging.name
   }
 }
 
@@ -1082,12 +1136,12 @@ resource "aws_iam_policy" "github_deploy" {
 
   name        = "3tier-github-deploy-${each.key}"
   description = "GitHub Actions deploy role: ${each.key} (least privilege, #35)"
-  policy      = each.value
+  policy      = each.value.json
 }
 
 resource "aws_iam_role_policy_attachment" "github_deploy" {
-  for_each = aws_iam_policy.github_deploy
+  for_each = local.deploy_policies
 
-  role       = aws_iam_role.github_deploy.name
-  policy_arn = each.value.arn
+  role       = local.deploy_role_names[each.value.env]
+  policy_arn = aws_iam_policy.github_deploy[each.key].arn
 }

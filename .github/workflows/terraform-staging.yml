@@ -1,0 +1,78 @@
+# 스테이징 인프라 apply·destroy (#101, DEC-60·63). 수동 실행만. 평소에는 destroy해 두고 필요한 세션에만 만든다.
+# 잡이 GitHub Environment "staging"을 쓰므로 OIDC sub가 environment:staging이 되고, 스테이징 전용 배포 역할만 수임한다.
+# 운영 워크플로(terraform.yml)와 state(staging/ key)·역할·동시 실행 그룹이 모두 다르다.
+name: terraform-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "apply 또는 destroy"
+        type: choice
+        options: [apply, destroy]
+        default: apply
+      image_tag:
+        description: "배포할 이미지 태그(비우면 ECR 최신)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-staging
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: terraform/staging
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_account_suffix: ${{ vars.TF_VAR_ACCOUNT_SUFFIX }}
+      TF_VAR_image_tag: ${{ inputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/3tier-github-deploy-staging
+          aws-region: ap-northeast-2
+          mask-aws-account-id: true
+
+      - name: init
+        run: terraform init -input=false
+
+      - name: plan
+        run: |
+          set -o pipefail
+          if [ "${{ inputs.action }}" = "destroy" ]; then
+            terraform plan -destroy -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
+          else
+            terraform plan -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
+          fi
+
+      - name: apply
+        run: |
+          T0=$(date +%s)
+          terraform apply -input=false -no-color tfplan
+          echo "DURATION=$(( $(date +%s) - T0 ))" >> "$GITHUB_ENV"
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## terraform-staging ${{ inputs.action }}"
+            grep -E '^(Plan:|No changes|Apply complete|Destroy complete)' plan.txt || true
+            echo ""
+            echo "소요: ${DURATION:-?}초"
+          } >> "$GITHUB_STEP_SUMMARY"

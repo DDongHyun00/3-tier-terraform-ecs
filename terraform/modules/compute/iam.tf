@@ -5,7 +5,7 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/3tier-ecs-boundary"
+  permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.permissions_boundary_name}"
 }
 
 data "aws_iam_policy_document" "ecs_tasks_assume" {

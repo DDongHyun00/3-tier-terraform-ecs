@@ -55,3 +55,37 @@ resource "aws_iam_role" "github_deploy" {
 
 # 3. 권한: AdministratorAccess로 시작했다가(DEC-21) #35에서 서비스별 고객 관리형 정책으로 좁혔다.
 #    정책 내용은 deploy_policies.tf.
+
+# ---------- 스테이징 배포 역할 (E11 #101, DEC-63) ----------
+# 운영 역할을 넓히지 않고 환경마다 역할을 따로 둔다. 스테이징 역할은 GitHub Environment "staging"을 쓰는 잡만 수임한다.
+# 잡이 Environment를 쓰면 OIDC sub가 ref:...가 아니라 environment:<이름>이 된다(DEC-61).
+# 권한은 운영과 같은 정책 문서를 3tier-staging-* 이름·staging/ state 키로 만든 것(deploy_policies.tf의 deploy_envs.staging)
+data "aws_iam_policy_document" "github_trust_staging" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["${local.github_sub_prefix}:environment:staging"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_deploy_staging" {
+  name               = "3tier-github-deploy-staging"
+  description        = "GitHub Actions deploy role for ${var.github_repo} staging (OIDC, environment:staging)"
+  assume_role_policy = data.aws_iam_policy_document.github_trust_staging.json
+}
