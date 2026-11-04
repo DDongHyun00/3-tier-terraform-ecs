@@ -151,3 +151,18 @@ module "monitoring" {
   # RDS 알림은 CloudWatch 알람에서 Grafana로 옮겼다(DEC-45·62)
   db_identifier = module.data.db_identifier
 }
+
+# ---------- 중앙 로그 (E12 #97, DEC "중앙 로그는 ELK, Loki는 비교군") ----------
+# 관제 VPC에 Elasticsearch·Kibana 단일 노드. 관제 서버와 다른 AZ(2c) 서브넷에 둔다
+module "logging" {
+  source = "../modules/logging"
+
+  name_prefix = "${local.name_prefix}-mon"
+  region      = var.region
+  vpc_id      = module.network_monitoring.vpc_id
+  subnet_id   = module.network_monitoring.private_subnet_ids[1]
+
+  peering_dependency_ids        = module.peering_monitoring_prod.route_ids
+  network_egress_dependency_ids = module.network_monitoring.private_egress_dependency_ids
+  log_source_security_group_id  = module.compute.instance_security_group_id
+}

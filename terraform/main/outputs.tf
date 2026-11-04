@@ -84,3 +84,13 @@ output "monitoring_server_instance_id" {
 output "grafana_admin_secret_name" {
   value = module.monitoring.grafana_admin_secret_name
 }
+
+output "elk_instance_id" {
+  description = "ELK 서버(E12). Kibana: aws ssm start-session --target <이 값> --document-name AWS-StartPortForwardingSession --parameters portNumber=5601,localPortNumber=5601"
+  value       = module.logging.elk_instance_id
+}
+
+output "elastic_secret_name" {
+  description = "Kibana 로그인 사용자 elastic의 비밀번호가 든 비밀"
+  value       = module.logging.elastic_secret_name
+}
