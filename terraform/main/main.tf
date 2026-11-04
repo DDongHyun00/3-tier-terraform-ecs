@@ -77,6 +77,12 @@ module "compute" {
 
   domain_name    = var.domain_name
   hosted_zone_id = data.aws_route53_zone.main.zone_id
+
+  # 앱 로그 → FireLens → 관제 VPC Elasticsearch(E12 #98). CloudWatch Logs에는 라우터 자신의 로그만 남는다
+  enable_log_router             = true
+  elasticsearch_host            = module.logging.elk_private_ip
+  elasticsearch_user_secret_arn = module.logging.fluentbit_secret_arn
+  log_index_prefix              = module.logging.log_index_prefix
 }
 
 module "observability" {
