@@ -1,0 +1,122 @@
+#!/bin/bash
+# ELK 서버 부팅 스크립트(E12 #97). Elasticsearch·Kibana 단일 노드를 docker compose로 올리고,
+# Kibana 시스템 계정 비밀번호, Fluent Bit 쓰기 전용 사용자, 앱 로그 인덱스 템플릿, Kibana 데이터 뷰를 만든다.
+# 템플릿 변수는 Terraform이 채운다. 셸 변수는 $${VAR} 형태로 이스케이프했다.
+set -euo pipefail
+exec > >(tee /var/log/elk-bootstrap.log) 2>&1
+
+retry() {
+  local n=0
+  until "$@"; do
+    n=$((n + 1))
+    if [ "$${n}" -ge 20 ]; then echo "failed after $${n} tries: $*"; return 1; fi
+    sleep 15
+  done
+}
+
+# ---------- 커널 설정: Elasticsearch는 mmap 수가 262144 이상이어야 기동한다 ----------
+sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" > /etc/sysctl.d/99-elasticsearch.conf
+
+# ---------- Docker + compose 플러그인 ----------
+retry dnf install -y docker
+systemctl enable --now docker
+mkdir -p /usr/libexec/docker/cli-plugins
+retry curl -fsSL -o /usr/libexec/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-aarch64"
+chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+
+# ---------- 비밀 ----------
+BASE=/opt/elk
+mkdir -p "$${BASE}/data/elasticsearch" "$${BASE}/data/kibana"
+chown -R 1000:0 "$${BASE}/data"   # 공식 이미지는 UID 1000으로 돈다
+
+ELASTIC_PASSWORD="$(retry aws secretsmanager get-secret-value --region ${region} --secret-id ${elastic_secret_id} --query SecretString --output text)"
+FLUENTBIT_PASSWORD="$(retry aws secretsmanager get-secret-value --region ${region} --secret-id ${fluentbit_secret_id} --query SecretString --output text)"
+# Kibana 시스템 계정은 이 서버 안에서만 쓰여 비밀로 따로 두지 않는다
+KIBANA_PASSWORD="$(openssl rand -hex 16)"
+KIBANA_KEY="$(openssl rand -hex 16)"
+
+umask 077
+cat > "$${BASE}/.env" <<ENV
+ELASTIC_PASSWORD=$${ELASTIC_PASSWORD}
+KIBANA_PASSWORD=$${KIBANA_PASSWORD}
+KIBANA_KEY=$${KIBANA_KEY}
+ENV
+umask 022
+
+# ---------- compose ----------
+# host 네트워크: 9200(Fluent Bit 수신, SG가 운영 인스턴스만 허용), 5601(Kibana, SG 인바운드 없음 → SSM 포트 포워딩으로만)
+cat > "$${BASE}/compose.yml" <<'COMPOSE'
+services:
+  elasticsearch:
+    image: ${elasticsearch_image}
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      cluster.name: 3tier-logs
+      node.name: elk-1
+      # 인증은 켜고(쓰기 전용 계정 분리), HTTP TLS는 끈다. 경로가 사설 피어링 안이고 단일 노드라 인증서 관리 비용을 감수하지 않았다
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      ELASTIC_PASSWORD: $${ELASTIC_PASSWORD}
+      ES_JAVA_OPTS: "-Xms${es_heap} -Xmx${es_heap}"
+    ulimits:
+      nofile: { soft: 65535, hard: 65535 }
+    volumes:
+      - ./data/elasticsearch:/usr/share/elasticsearch/data
+
+  kibana:
+    image: ${kibana_image}
+    network_mode: host
+    restart: unless-stopped
+    depends_on: [elasticsearch]
+    environment:
+      SERVER_HOST: "127.0.0.1"
+      ELASTICSEARCH_HOSTS: '["http://localhost:9200"]'
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: $${KIBANA_PASSWORD}
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: $${KIBANA_KEY}
+      TELEMETRY_OPTIN: "false"
+    volumes:
+      - ./data/kibana:/usr/share/kibana/data
+COMPOSE
+
+cd "$${BASE}"
+retry docker compose pull
+docker compose up -d elasticsearch
+
+ES="http://localhost:9200"
+AUTH="elastic:$${ELASTIC_PASSWORD}"
+es() { curl -fsS -u "$${AUTH}" -H 'Content-Type: application/json' "$@"; }
+
+# 보안 인덱스까지 준비돼야 사용자 API가 동작한다
+retry es "$${ES}/_cluster/health?wait_for_status=yellow&timeout=30s" -o /dev/null
+
+# Kibana 시스템 계정 비밀번호
+retry es -X POST "$${ES}/_security/user/kibana_system/_password" -d "{\"password\":\"$${KIBANA_PASSWORD}\"}"
+
+# Fluent Bit: 앱 로그 인덱스에 문서 추가·인덱스 생성만(읽기·삭제 없음)
+es -X PUT "$${ES}/_security/role/fluentbit_writer" -d '{
+  "cluster": ["monitor"],
+  "indices": [{ "names": ["${log_index_prefix}-*"], "privileges": ["create_doc", "create_index", "auto_configure"] }]
+}'
+es -X PUT "$${ES}/_security/user/fluentbit" -d "{\"password\":\"$${FLUENTBIT_PASSWORD}\",\"roles\":[\"fluentbit_writer\"]}"
+
+# 앱 로그 인덱스: 단일 노드라 복제본 0(아니면 yellow로 남는다)
+es -X PUT "$${ES}/_index_template/${log_index_prefix}" -d '{
+  "index_patterns": ["${log_index_prefix}-*"],
+  "template": { "settings": { "number_of_shards": 1, "number_of_replicas": 0 } }
+}'
+
+docker compose up -d kibana
+
+# Kibana 데이터 뷰(앱 로그). Kibana가 뜰 때까지 재시도
+retry curl -fsS -u "$${AUTH}" -H 'kbn-xsrf: true' -H 'Content-Type: application/json' \
+  -X POST "http://localhost:5601/api/data_views/data_view" \
+  -d '{"data_view":{"id":"${log_index_prefix}","title":"${log_index_prefix}-*","name":"app logs","timeFieldName":"@timestamp"},"override":true}' -o /dev/null
+
+echo "elk bootstrap done"
