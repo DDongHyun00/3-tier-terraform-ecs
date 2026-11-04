@@ -107,3 +107,13 @@ variable "network_egress_dependency_ids" {
   description = "관제 VPC 사설 서브넷의 인터넷 경로 리소스 ID(network 모듈 private_egress_dependency_ids). 값은 쓰지 않고 서버가 경로 뒤에 만들어지고 앞에 지워지게 하는 데만 쓴다"
   type        = list(string)
 }
+
+variable "app_discovery_zone_id" {
+  description = "앱 Cloud Map 네임스페이스의 비공개 호스팅 존 ID(compute 출력)"
+  type        = string
+}
+
+variable "app_discovery_dns_name" {
+  description = "앱 태스크 A 레코드 이름(compute 출력). 예: board.3tier-prod.internal"
+  type        = string
+}

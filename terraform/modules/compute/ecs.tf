@@ -129,6 +129,11 @@ resource "aws_ecs_service" "app" {
     container_port   = var.app_port
   }
 
+  # 태스크가 뜨고 지는 대로 Cloud Map에 IP를 등록·해제한다(#94)
+  service_registries {
+    registry_arn = aws_service_discovery_service.app.arn
+  }
+
   # 배포는 GitHub Actions가 태스크 정의 새 리비전을 등록하고 서비스를 갱신한다(E06, DEC).
   # Terraform이 서비스의 task_definition을 자기 리비전으로 되돌리지 않도록 무시한다.
   # Terraform으로 태스크 정의(CPU·메모리·환경 변수)를 바꾸면 다음 배포 때 그 리비전을 기반으로 반영된다.
@@ -139,11 +144,13 @@ resource "aws_ecs_service" "app" {
   }
 
   # 리스너가 타깃 그룹에 붙기 전에 서비스를 만들면 실패한다. 용량 공급자가 클러스터에 붙은 뒤에 만든다(destroy는 반대 순서)
+  # 지표 경로 차단 규칙(#94)이 있은 뒤에 태스크가 ALB 뒤로 들어가게 한다(새로 만들 때).
   # destroy 때 ECS agent가 태스크 정지를 끝까지 보고하려면 네트워크 경로(#108)와 인스턴스 역할의 ECS 권한이 서비스보다 오래 남아야 한다.
   # 11/02 두 번째 destroy에서 ECS 정책 연결이 먼저 지워져 같은 DRAINING 고착이 났다
   depends_on = [
     aws_lb_listener.https,
     aws_lb_listener.http,
+    aws_lb_listener_rule.block_metrics,
     aws_ecs_cluster_capacity_providers.this,
     terraform_data.network_egress,
     aws_iam_role_policy_attachment.ecs_instance_agent,
