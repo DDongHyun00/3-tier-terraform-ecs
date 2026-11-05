@@ -94,3 +94,77 @@ resource "aws_fis_experiment_template" "db_disrupt" {
 
   tags = { Name = "3tier-db-disrupt" }
 }
+
+# ---------- Spot 회수 실험 (E09 #46, DEC-67) ----------
+# 운영 Spot 컨테이너 인스턴스 1대에 회수 예고(2분)를 보낸다. 관리형 인스턴스 드레이닝이 태스크를 옮기는지,
+# 그동안 사용자 영향이 얼마인지 잰다. 대상은 실험을 시작할 때 이름 태그로 찾는다(main을 apply할 때마다 인스턴스가 바뀐다)
+data "aws_iam_policy_document" "fis_spot" {
+  statement {
+    sid       = "InterruptProjectSpotInstances"
+    actions   = ["ec2:SendSpotInstanceInterruptions"]
+    resources = ["arn:aws:ec2:${local.region}:${local.account}:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "DescribeInstances"
+    actions   = ["ec2:DescribeInstances"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "fis_spot" {
+  name   = "spot-interruption"
+  role   = aws_iam_role.fis.id
+  policy = data.aws_iam_policy_document.fis_spot.json
+}
+
+resource "aws_fis_experiment_template" "spot_interrupt" {
+  description = "Send a Spot interruption notice to one ${local.main_prefix} Spot container instance (#46)"
+  role_arn    = aws_iam_role.fis.arn
+
+  stop_condition {
+    source = "none"
+  }
+
+  action {
+    name      = "interrupt-one-spot"
+    action_id = "aws:ec2:send-spot-instance-interruptions"
+
+    # 예고 뒤 회수까지 2분(실제 Spot 회수 예고와 같은 시간)
+    parameter {
+      key   = "durationBeforeInterruption"
+      value = "PT2M"
+    }
+
+    target {
+      key   = "SpotInstances"
+      value = "spot-instances"
+    }
+  }
+
+  target {
+    name           = "spot-instances"
+    resource_type  = "aws:ec2:spot-instance"
+    selection_mode = "COUNT(1)"
+
+    resource_tag {
+      key   = "Name"
+      value = "${local.main_prefix}-ecs-spot-instance"
+    }
+
+    filter {
+      path   = "State.Name"
+      values = ["running"]
+    }
+  }
+
+  tags = { Name = "3tier-spot-interrupt" }
+
+  depends_on = [aws_iam_role_policy.fis_spot]
+}

@@ -30,3 +30,8 @@ output "github_deploy_staging_role_arn" {
   description = "스테이징 배포 역할 ARN(#101). terraform 워크플로의 staging 잡(Environment staging)이 수임한다"
   value       = aws_iam_role.github_deploy_staging.arn
 }
+
+output "fis_spot_interrupt_template_id" {
+  description = "Spot 회수 예고 FIS 실험 템플릿 ID(#46). aws fis start-experiment --experiment-template-id에 쓴다"
+  value       = aws_fis_experiment_template.spot_interrupt.id
+}
