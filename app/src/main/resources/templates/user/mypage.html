@@ -85,6 +85,16 @@
 </div>
 
 <script>
+  // 알림 문구에는 다른 사용자의 닉네임·글 제목이 들어 있어 HTML로 넣기 전에 이스케이프한다
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function loadNotifications() {
     fetch("/api/notifications")
             .then((res) => res.json())
@@ -115,14 +125,14 @@
                   minute: "2-digit",
                 });
 
-                let content = n.message;
+                let content = escapeHtml(n.message);
                 if (n.postId) {
-                  content = `<a href="/posts/${n.postId}">${n.message}</a>`;
+                  content = `<a href="/posts/${encodeURIComponent(n.postId)}">${content}</a>`;
                 }
 
                 notificationDiv.innerHTML = `
                 <div class="notification-item">
-                  <div class="notification-time">${createdAt}</div>
+                  <div class="notification-time">${escapeHtml(createdAt)}</div>
                   <div class="notification-content">${content}</div>
                 </div>
               `;

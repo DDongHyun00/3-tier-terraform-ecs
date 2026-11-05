@@ -1,5 +1,6 @@
 package com.example.board.board.service;
 
+import com.example.board.common.exception.ForbiddenException;
 import com.example.board.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import com.example.board.board.dto.PostRequestDto;
@@ -90,7 +91,7 @@ public class PostService {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
         if (!post.getUser().getUsername().equals(username)) {
-            throw new SecurityException("작성자 본인만 수정할 수 있습니다.");
+            throw new ForbiddenException("작성자 본인만 수정할 수 있습니다.");
         }
         if (dto == null || !StringUtils.hasText(dto.getTitle()) || !StringUtils.hasText(dto.getContent())) {
             throw new IllegalArgumentException("제목과 내용은 비어 있을 수 없습니다.");
@@ -104,7 +105,7 @@ public class PostService {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
         if (!post.getUser().getUsername().equals(username)) {
-            throw new SecurityException("작성자 본인만 삭제할 수 있습니다.");
+            throw new ForbiddenException("작성자 본인만 삭제할 수 있습니다.");
         }
         postRepository.delete(post);
     }
