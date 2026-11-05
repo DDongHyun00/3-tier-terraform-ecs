@@ -58,6 +58,7 @@ resource "aws_ecs_task_definition" "app" {
       secrets = [
         { name = "DB_USERNAME", valueFrom = "${var.db_secret_arn}:username::" },
         { name = "DB_PASSWORD", valueFrom = "${var.db_secret_arn}:password::" },
+        { name = "ADMIN_PASSWORD", valueFrom = "${var.db_secret_arn}:admin_password::" },
       ]
 
       logConfiguration = local.app_log_configuration

@@ -29,11 +29,19 @@ resource "aws_secretsmanager_secret" "db" {
   recovery_window_in_days = 0
 }
 
+# 앱 관리자 계정(admin) 비밀번호. 시드 SQL의 데모 비밀번호는 로컬 전용이고,
+# 운영·스테이징에서는 앱이 기동할 때 이 값으로 admin 비밀번호를 바꾼다(AdminPasswordInitializer).
+resource "random_password" "admin" {
+  length  = 24
+  special = false
+}
+
 resource "aws_secretsmanager_secret_version" "db" {
   secret_id = aws_secretsmanager_secret.db.id
   secret_string = jsonencode({
-    username = var.db_username
-    password = random_password.db.result
+    username       = var.db_username
+    password       = random_password.db.result
+    admin_password = random_password.admin.result
   })
 }
 

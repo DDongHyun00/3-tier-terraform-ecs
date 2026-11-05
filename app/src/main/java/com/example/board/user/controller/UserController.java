@@ -69,7 +69,7 @@ public class UserController {
         List<TimelineItemDto> timeline = timelineService.getUserTimeline(user.getUsername());
 
         model.addAttribute("timeline", timeline);
-        model.addAttribute("currentUserNickname", user.getNickname()); // 닉네임이 따로 있으면 User에서 가져오기
+        model.addAttribute("currentUserNickname", user.getNickname());
         return "user/mypage";
     }
 }

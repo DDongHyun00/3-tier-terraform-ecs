@@ -295,7 +295,7 @@
                 </div>
               </div>
 
-              <!-- ✅ 대댓글 입력 폼: 닉네임 표시 추가 -->
+              <!-- 대댓글 입력 폼 -->
               <div
                 th:id="'reply-form-' + ${c.commentId}"
                 class="reply-form-box"
@@ -423,27 +423,45 @@
           });
         }
 
+        // -------- HTML 이스케이프 (사용자가 쓴 값을 템플릿 문자열에 넣기 전에) --------
+        function escapeHtml(value) {
+          return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        // 서버 JSON 값은 모두 이스케이프한 뒤 HTML 조각에 넣는다
+        function escapeFields(fields) {
+          return {
+            postId: escapeHtml(fields.postId),
+            id: escapeHtml(fields.id),
+            author: escapeHtml(fields.author),
+            date: escapeHtml(formatDate(fields.createdAt)),
+            content: escapeHtml(fields.content),
+            likeCount: escapeHtml(fields.likeCount ?? 0),
+            nickname: escapeHtml(currentNickname),
+          };
+        }
+
         // -------- DOM 생성 유틸 (댓글/대댓글) --------
-        function makeCommentHtml({
-          postId,
-          id,
-          author,
-          username,
-          createdAt,
-          content,
-          likeCount,
-        }) {
-          const canEdit = username && currentUser && username === currentUser;
+        function makeCommentHtml(fields) {
+          const canEdit =
+            fields.username && currentUser && fields.username === currentUser;
+          const { postId, id, author, date, content, likeCount, nickname } =
+            escapeFields(fields);
           return `
     <div class="comment-item" data-comment-id="${id}">
       <div class="comment-header">
         <div class="comment-meta">
           <strong>${author}</strong>
-          <span class="comment-date">${formatDate(createdAt)}</span>
+          <span class="comment-date">${date}</span>
         </div>
         <div class="comment-actions">
           <button type="button" class="btn-like" data-post-id="${postId}" data-comment-id="${id}">
-            ❤️ <span class="comment-like-count">${likeCount ?? 0}</span>
+            ❤️ <span class="comment-like-count">${likeCount}</span>
           </button>
           ${
             canEdit
@@ -460,7 +478,7 @@
       <!-- 댓글 본문 -->
       <p class="comment-body" id="comment-content-${id}">${content}</p>
 
-      <!-- ✨ 숨겨진 수정 폼 추가 -->
+      <!-- 숨겨진 수정 폼 -->
       <div class="comment-edit-form" id="comment-edit-form-${id}" style="display:none;">
         <textarea rows="3" class="comment-edit-input" id="comment-edit-input-${id}"></textarea>
         <div class="comment-edit-actions">
@@ -471,7 +489,7 @@
 
       <!-- 대댓글 입력 폼 -->
       <div class="reply-form-box" id="reply-form-${id}" style="display:none;">
-        <div class="reply-author">${currentNickname ?? ""}</div>
+        <div class="reply-author">${nickname}</div>
         <textarea rows="3" class="reply-content"></textarea>
         <div class="reply-actions">
           <button type="button" class="btn-reply-submit" data-post-id="${postId}" data-parent-id="${id}">등록</button>
@@ -482,26 +500,21 @@
   `;
         }
 
-        function makeReplyHtml({
-          postId,
-          id,
-          author,
-          username,
-          createdAt,
-          content,
-          likeCount,
-        }) {
-          const canEdit = username && currentUser && username === currentUser;
+        function makeReplyHtml(fields) {
+          const canEdit =
+            fields.username && currentUser && fields.username === currentUser;
+          const { postId, id, author, date, content, likeCount } =
+            escapeFields(fields);
           return `
     <div class="reply-item" data-comment-id="${id}">
       <div class="comment-header">
         <div class="comment-meta">
           ↳ <strong>${author}</strong>
-          <span class="comment-date">${formatDate(createdAt)}</span>
+          <span class="comment-date">${date}</span>
         </div>
         <div class="comment-actions">
           <button type="button" class="btn-like" data-post-id="${postId}" data-comment-id="${id}">
-            ❤️ <span class="comment-like-count">${likeCount ?? 0}</span>
+            ❤️ <span class="comment-like-count">${likeCount}</span>
           </button>
           ${
             canEdit
@@ -517,7 +530,7 @@
       <!-- 대댓글 본문 -->
       <p class="comment-body" id="comment-content-${id}">${content}</p>
 
-      <!-- ✨ 숨겨진 수정 폼 추가 -->
+      <!-- 숨겨진 수정 폼 -->
       <div class="comment-edit-form" id="comment-edit-form-${id}" style="display:none;">
         <textarea rows="3" class="comment-edit-input" id="comment-edit-input-${id}"></textarea>
         <div class="comment-edit-actions">

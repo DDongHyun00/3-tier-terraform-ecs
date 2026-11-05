@@ -1,5 +1,6 @@
 package com.example.board.comment.service;
 
+import com.example.board.common.exception.ForbiddenException;
 import com.example.board.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import com.example.board.board.entity.Post;
@@ -155,7 +156,7 @@ public class CommentService {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new NotFoundException("댓글을 찾을 수 없습니다."));
         if (!comment.getUser().getUsername().equals(username)) {
-            throw new SecurityException("본인 댓글만 수정할 수 있습니다.");
+            throw new ForbiddenException("본인 댓글만 수정할 수 있습니다.");
         }
         comment.update(dto.getContent());
     }
@@ -166,7 +167,7 @@ public class CommentService {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new NotFoundException("댓글을 찾을 수 없습니다."));
         if (!comment.getUser().getUsername().equals(username)) {
-            throw new SecurityException("본인 댓글만 삭제할 수 있습니다.");
+            throw new ForbiddenException("본인 댓글만 삭제할 수 있습니다.");
         }
         commentRepository.delete(comment);
     }

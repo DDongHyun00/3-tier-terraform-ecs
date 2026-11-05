@@ -35,15 +35,12 @@ public class NotificationService {
 
         emitter.onCompletion(() -> {
             emitters.remove(username);
-//            System.out.println("SSE 연결 완료: " + username);
         });
         emitter.onTimeout(() -> {
             emitters.remove(username);
-//            System.out.println("SSE 연결 타임아웃: " + username);
         });
         emitter.onError((ex) -> {
             emitters.remove(username);
-//            System.out.println("SSE 연결 오류: " + username + " - " + ex.getMessage());
         });
 
         return emitter;
