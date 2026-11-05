@@ -50,6 +50,7 @@ class RequestLogFilterTests {
 	void logsFieldsAndAlbTraceId() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/posts/1");
 		request.addHeader(RequestLogFilter.TRACE_HEADER, "Root=1-abc-def");
+		request.addHeader("User-Agent", "Googlebot/2.1");
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		String[] idSeenInsideRequest = new String[1];
 
@@ -65,6 +66,7 @@ class RequestLogFilterTests {
 				.containsEntry("http.request.method", "GET")
 				.containsEntry("url.path", "/posts/1")
 				.containsEntry("http.response.status_code", 404)
+				.containsEntry("user_agent.original", "Googlebot/2.1")
 				.containsKey("event.duration_ms");
 		assertThat(event.getMDCPropertyMap()).containsEntry(RequestLogFilter.REQUEST_ID_MDC_KEY, "Root=1-abc-def");
 		assertThat(MDC.get(RequestLogFilter.REQUEST_ID_MDC_KEY)).isNull();
