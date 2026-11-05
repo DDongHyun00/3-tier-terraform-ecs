@@ -77,7 +77,7 @@ flowchart LR
 | ![ECS 용량 공급자](docs/images/02-ecs-capacity-providers.jpg)<br/>온디맨드·Spot 용량 공급자와 AZ별 인스턴스 | ![대상 그룹](docs/images/03-target-group-healthy.jpg)<br/>ALB 대상 그룹 healthy |
 | ![승인 배포](docs/images/04-deploy-approval.jpg)<br/>빌드 → 스테이징 → 운영 승인 대기 | ![부하 중 대시보드](docs/images/05-cloudwatch-dashboard-load.jpg)<br/>200 RPS 부하 중 대시보드(E07 당시 CloudWatch 대시보드, 이후 Grafana로 옮김) |
 | ![스케일 아웃·인](docs/images/06-scale-out-in.jpg)<br/>태스크 2 → 4 → 2 | ![Slack 알람](docs/images/07-slack-alarm.jpg)<br/>5xx 비율 알람과 해소 |
-| ![Kibana](docs/images/08-kibana-trace.jpg)<br/>요청 ID로 로그 추적 | |
+| ![Kibana](docs/images/08-kibana-trace.jpg)<br/>요청 ID로 로그 추적 | ![Grafana 대시보드](docs/images/09-grafana-dashboard.jpg)<br/>Grafana 운영 개요: 요청 수·p95·p99·컨테이너 CPU·DB 연결·호스트 CPU |
 
 ## 장애 실험
 
