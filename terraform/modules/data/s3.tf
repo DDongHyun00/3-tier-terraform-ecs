@@ -6,8 +6,8 @@
 
 # ---------- 버킷 ----------
 resource "aws_s3_bucket" "assets" {
-  bucket        = "3tier-assets-${var.account_suffix}" # S3 이름은 전역 유일 → 계정 접미사
-  force_destroy = true                                 # 반복 destroy 전제. 객체가 있어도 지운다
+  bucket        = "${var.assets_bucket_prefix}-${var.account_suffix}" # S3 이름은 전역 유일 → 계정 접미사
+  force_destroy = true                                                # 반복 destroy 전제. 객체가 있어도 지운다
 
   tags = { Name = "${var.name_prefix}-assets" }
 }
