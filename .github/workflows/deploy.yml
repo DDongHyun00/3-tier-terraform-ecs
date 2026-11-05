@@ -67,8 +67,13 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       # provenance=false: 증명 매니페스트 없이 이미지 하나만 올린다. 캐시는 GitHub Actions 캐시(mode=min, #36)
+      # 빌드 요약·빌드 기록 아티팩트를 끈다. 둘 다 이미지 주소(계정 ID 포함)를 담고, 공개 레포에서는 누구나 본다.
+      # 로그 마스킹은 요약과 아티팩트에 닿지 않는다(#49 공개 전 점검에서 발견, 아티팩트 10개 삭제)
       - name: build and push
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_SUMMARY: "false"
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: app
           push: true
