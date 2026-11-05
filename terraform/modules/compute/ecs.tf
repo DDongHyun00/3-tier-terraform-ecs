@@ -99,8 +99,11 @@ resource "aws_ecs_service" "app" {
     field = "memory"
   }
 
-  # 롤링: 기존 2개를 유지한 채 새 2개를 띄우고(최대 200%), healthy가 되면 옛것을 뺀다
-  deployment_minimum_healthy_percent = 100
+  # 롤링: 새 태스크를 띄우고(최대 200%) 옛것을 뺀다.
+  # 최소 50%: Spot 회수 예고(2분)로 인스턴스가 DRAINING이 되면 옛 태스크를 대체 태스크의 healthy를 기다리지 않고
+  # 바로 대상 그룹에서 빼고 멈춘다. 그동안 온디맨드 태스크가 요청을 받는다.
+  # 100%일 때는 대체 태스크 healthy까지 기다리다 2분을 넘겨 회수된 인스턴스로 요청이 가 502·504 12건이 났다(#46 3차 측정)
+  deployment_minimum_healthy_percent = 50
   deployment_maximum_percent         = 200
 
   # 새 태스크가 계속 죽으면 배포를 실패 처리하고 직전 리비전으로 되돌린다 (E08 #42에서 재현)
