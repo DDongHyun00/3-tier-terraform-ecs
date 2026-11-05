@@ -225,3 +225,28 @@ variable "log_index_prefix" {
   type        = string
   default     = "app-board"
 }
+
+# ---------- Spot (E09 #46, DEC-67) ----------
+variable "enable_spot" {
+  description = "Spot ASG·용량 공급자를 더해 온디맨드 base 뒤의 태스크를 Spot에 놓을지"
+  type        = bool
+  default     = false
+}
+
+variable "on_demand_base" {
+  description = "Spot을 켰을 때 항상 온디맨드에 둘 태스크 수. Spot이 한꺼번에 회수돼도 이만큼은 남는다"
+  type        = number
+  default     = 1
+}
+
+variable "spot_instance_types" {
+  description = "Spot ASG가 고를 인스턴스 타입. 모두 2 GiB(앱 태스크 1개/대)이고 awsvpc 태스크 1개에 필요한 네트워크 카드 2개 이상"
+  type        = list(string)
+  default     = ["t3.small", "t3a.small"]
+}
+
+variable "spot_asg_max_size" {
+  description = "Spot ASG 최대 인스턴스 수(태스크 상한 4 + 롤링 배포 여유)"
+  type        = number
+  default     = 8
+}

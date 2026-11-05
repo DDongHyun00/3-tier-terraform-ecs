@@ -146,13 +146,103 @@ resource "aws_ecs_capacity_provider" "ec2" {
   }
 }
 
+# ---------- Spot 용량 (E09 #46, DEC-67) ----------
+# 온디맨드 ASG는 그대로 두고 Spot ASG·용량 공급자를 하나 더 둔다. 서비스 전략은 온디맨드 base 1 + 나머지 Spot.
+# 시작 템플릿은 같은 것을 쓰고 인스턴스 타입만 여러 개로 열어 둔다(Spot 풀이 마를 때 대비, 둘 다 2 GiB라 태스크 1개/대 그대로).
+# Spot 회수 예고(2분)는 관리형 인스턴스 드레이닝이 받아 태스크를 다른 인스턴스로 옮긴다(ECS_ENABLE_SPOT_INSTANCE_DRAINING 불필요).
+resource "aws_autoscaling_group" "spot" {
+  count = var.enable_spot ? 1 : 0
+
+  name                = "${var.name_prefix}-ecs-spot-asg"
+  vpc_zone_identifier = var.private_subnet_ids
+  min_size            = 0
+  max_size            = var.spot_asg_max_size
+
+  mixed_instances_policy {
+    instances_distribution {
+      on_demand_base_capacity                  = 0
+      on_demand_percentage_above_base_capacity = 0
+      # 가격과 남은 용량을 같이 보는 할당. AWS가 Spot 기본 권장으로 안내한다(회수 가능성 낮은 풀 우선)
+      spot_allocation_strategy = "price-capacity-optimized"
+    }
+
+    launch_template {
+      launch_template_specification {
+        launch_template_id = aws_launch_template.ecs.id
+        version            = aws_launch_template.ecs.latest_version
+      }
+
+      dynamic "override" {
+        for_each = var.spot_instance_types
+        content {
+          instance_type = override.value
+        }
+      }
+    }
+  }
+
+  protect_from_scale_in = true
+  force_delete          = true
+
+  tag {
+    key                 = "AmazonECSManaged"
+    value               = "true"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.name_prefix}-ecs-spot-instance"
+    propagate_at_launch = true
+  }
+
+  lifecycle {
+    ignore_changes = [desired_capacity]
+  }
+
+  depends_on = [terraform_data.network_egress]
+}
+
+resource "aws_ecs_capacity_provider" "spot" {
+  count = var.enable_spot ? 1 : 0
+  name  = "${var.name_prefix}-spot"
+
+  auto_scaling_group_provider {
+    auto_scaling_group_arn         = aws_autoscaling_group.spot[0].arn
+    managed_termination_protection = "ENABLED"
+    managed_draining               = "ENABLED"
+
+    managed_scaling {
+      status                    = "ENABLED"
+      target_capacity           = 100
+      minimum_scaling_step_size = 1
+      maximum_scaling_step_size = 2
+      instance_warmup_period    = 300
+    }
+  }
+}
+
+locals {
+  # 서비스·클러스터 기본 전략. Spot을 켜면 온디맨드 base(1개)를 먼저 채우고 나머지는 모두 Spot
+  # (base는 한 공급자에만 둘 수 있고 weight보다 먼저 채워진다. 온디맨드 weight 0 = base 뒤로는 온디맨드에 놓지 않음)
+  capacity_provider_strategy = var.enable_spot ? [
+    { capacity_provider = aws_ecs_capacity_provider.ec2.name, base = var.on_demand_base, weight = 0 },
+    { capacity_provider = aws_ecs_capacity_provider.spot[0].name, base = 0, weight = 1 },
+    ] : [
+    { capacity_provider = aws_ecs_capacity_provider.ec2.name, base = 0, weight = 1 },
+  ]
+}
+
 resource "aws_ecs_cluster_capacity_providers" "this" {
   cluster_name       = aws_ecs_cluster.this.name
-  capacity_providers = [aws_ecs_capacity_provider.ec2.name]
+  capacity_providers = concat([aws_ecs_capacity_provider.ec2.name], aws_ecs_capacity_provider.spot[*].name)
 
-  default_capacity_provider_strategy {
-    capacity_provider = aws_ecs_capacity_provider.ec2.name
-    weight            = 1
-    base              = 0
+  dynamic "default_capacity_provider_strategy" {
+    for_each = local.capacity_provider_strategy
+    content {
+      capacity_provider = default_capacity_provider_strategy.value.capacity_provider
+      base              = default_capacity_provider_strategy.value.base
+      weight            = default_capacity_provider_strategy.value.weight
+    }
   }
 }

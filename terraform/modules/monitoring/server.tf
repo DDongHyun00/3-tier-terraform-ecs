@@ -164,7 +164,7 @@ resource "aws_instance" "server" {
     compose_version     = var.compose_version
     scrape_interval     = var.scrape_interval
     retention           = var.retention
-    target_asg_name     = var.target_asg_name
+    target_asg_names    = jsonencode(var.target_asg_names)
     app_dns_name        = var.app_discovery_dns_name
     app_metrics_port    = var.app_metrics_port
     node_exporter_port  = var.node_exporter_port

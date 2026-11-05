@@ -52,9 +52,9 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "target_asg_name" {
-  description = "수집 대상 ECS 컨테이너 인스턴스 ASG 이름. 인스턴스에 자동으로 붙는 aws:autoscaling:groupName 태그로 찾는다"
-  type        = string
+variable "target_asg_names" {
+  description = "수집 대상 ECS 컨테이너 인스턴스 ASG 이름들(온디맨드·Spot). 인스턴스에 자동으로 붙는 aws:autoscaling:groupName 태그로 찾는다"
+  type        = list(string)
 }
 
 variable "instance_type" {

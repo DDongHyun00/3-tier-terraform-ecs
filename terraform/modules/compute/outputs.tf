@@ -42,6 +42,11 @@ output "asg_name" {
   value       = aws_autoscaling_group.ecs.name
 }
 
+output "asg_names" {
+  description = "컨테이너 인스턴스 ASG 이름 전부(온디맨드 + Spot, #46). 관제가 이 태그로 수집 대상을 찾는다"
+  value       = concat([aws_autoscaling_group.ecs.name], aws_autoscaling_group.spot[*].name)
+}
+
 output "capacity_provider_name" {
   description = "ECS 용량 공급자 이름"
   value       = aws_ecs_capacity_provider.ec2.name

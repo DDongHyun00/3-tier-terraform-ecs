@@ -53,7 +53,7 @@ scrape_configs:
         port: ${node_exporter_port}
         filters:
           - name: tag:aws:autoscaling:groupName
-            values: ["${target_asg_name}"]
+            values: ${target_asg_names}
           - name: instance-state-name
             values: ["running"]
     relabel_configs:
@@ -78,7 +78,7 @@ scrape_configs:
         port: ${cadvisor_port}
         filters:
           - name: tag:aws:autoscaling:groupName
-            values: ["${target_asg_name}"]
+            values: ${target_asg_names}
           - name: instance-state-name
             values: ["running"]
     relabel_configs:
