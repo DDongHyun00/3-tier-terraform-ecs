@@ -122,10 +122,15 @@ CloudWatch에는 관제 서버가 죽어도 오는 비상 알람 2개와 자동 
 | AppCpuWarning | 앱 컨테이너 평균 CPU(예약 0.5 vCPU 대비 %, cAdvisor) | 60% 초과 3분 | warning |
 | AppCpuCritical | 같음 | 80% 초과 3분 | critical |
 | AppNoScrapeTarget | 지표를 내는 앱 태스크 수 | 1 미만 30초 | critical |
+| AppHttp5xxRate | 앱 5xx 비율(http_server_requests, 1분 rate). 분당 요청 10건 미만이면 0 | 5% 초과 1분 | critical |
 | RdsStorageLow | RDS FreeStorageSpace(CloudWatch 데이터 소스, 5분 최솟값) | 2 GB 미만 | critical |
 | RdsConnectionsHigh | RDS DatabaseConnections(CloudWatch 데이터 소스, 1분 최댓값) | 60 초과 3분 | warning |
 
 앱 규칙은 10초마다, RDS 규칙은 지표가 1~5분 단위라 1분마다 평가합니다.
+
+AppHttp5xxRate는 #100 DB 연결 장애에서 Grafana 규칙이 하나도 울리지 않은 공백을 메우려고 더했습니다(#131). 시험에서 500 발생 1분 27.7초 뒤 SNS로 발송됐습니다.
+
+**중앙 로그(E12, DEC-64~66)**: 앱은 Elastic Common Schema JSON으로 로그를 내고(Spring Boot 구조화 로그), 요청마다 ALB `X-Amzn-Trace-Id`를 `http.request.id`로 붙입니다. 앱 태스크의 FireLens 사이드카(aws-for-fluent-bit)가 관제 VPC의 Elasticsearch(`app-board-YYYY.MM.DD`)로 보내고, Kibana는 SSM 포트 포워딩으로만 엽니다. Fluent Bit 계정은 이 인덱스에 쓰기만 합니다. 앱 로그는 CloudWatch Logs로 가지 않고, 라우터 자신의 로그만 갑니다. 장애 추적 기록과 로그 스택 비교는 `docs/logging.md`.
 
 AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단) 때 CloudWatch 알람이 울리지 않은 탐지 공백을 메우려는 규칙입니다. 11/04 같은 장애(약 65초 중단)에서 Grafana는 중단 약 50초 뒤 Slack에 알렸고 CloudWatch 알람은 이번에도 울리지 않았습니다. 같은 CPU 부하에서는 Grafana 경고가 4분 10초, CloudWatch CPU 알람이 6분 26초였습니다(실측 기록 DB).
 
