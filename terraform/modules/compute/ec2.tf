@@ -192,6 +192,11 @@ resource "aws_autoscaling_group" "spot" {
   protect_from_scale_in = true
   force_delete          = true
 
+  # 용량 재조정: 회수 2분 예고보다 먼저 오는 "회수 위험 높음"(rebalance recommendation) 신호에 새 인스턴스를 먼저 띄우고,
+  # 새 인스턴스가 서비스에 들어간 뒤 위험한 인스턴스를 종료한다(종료는 수명 주기 훅 → 관리형 드레이닝이 태스크를 옮긴다).
+  # 11/05 첫 실측: 이 설정 없이 회수 예고를 받으면 대신할 인스턴스가 2분 안에 준비되지 않아 504 13건(약 12초)
+  capacity_rebalance = true
+
   tag {
     key                 = "AmazonECSManaged"
     value               = "true"
