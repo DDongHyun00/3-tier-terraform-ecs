@@ -1,7 +1,7 @@
-# ECS 역할 2개. 실행 역할은 "컨테이너를 띄우는 ECS"의 권한, 태스크 역할은 "컨테이너 안 앱 코드"의 권한. (DEC-15 최소 권한)
+# ECS 역할 3개. 실행 역할은 "컨테이너를 띄우는 ECS"의 권한, 태스크 역할은 "컨테이너 안 앱 코드"의 권한, 인스턴스 역할은 "EC2 위 ECS 에이전트"의 권한. (DEC-15 최소 권한)
 
-# 두 역할 모두 bootstrap의 permissions boundary를 붙인다(#35). 배포 역할은 boundary가 붙은 역할만 만들 수 있다.
-# 이름은 terraform/bootstrap/deploy_policies.tf의 ecs_boundary_name과 같아야 한다.
+# 세 역할 모두 bootstrap의 permissions boundary를 붙인다(#35). 배포 역할은 boundary가 붙은 역할만 만들 수 있다.
+# 이름은 var.permissions_boundary_name이고, terraform/bootstrap/deploy_policies.tf의 deploy_envs.boundary_name과 같아야 한다.
 data "aws_caller_identity" "current" {}
 
 locals {

@@ -6,6 +6,8 @@ resource "terraform_data" "peering_ready" {
   input = var.peering_dependency_ids
 }
 
+# 9200은 앱 태스크 SG에서 오는 트래픽만 받는다(아래 es_from_app_tasks). description의 "app instances"는 이 뜻이다.
+# SG description은 바꾸면 SG가 새로 만들어져서 그대로 둔다
 resource "aws_security_group" "elk" {
   name        = "${var.name_prefix}-sg-elk"
   description = "Elasticsearch/Kibana server: 9200 from app instances only, HTTPS out"

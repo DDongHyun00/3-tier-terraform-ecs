@@ -128,7 +128,7 @@ module "network_monitoring" {
   create_tier_security_groups = false
 }
 
-# 관제 ↔ 운영. 스테이징은 별도 루트(DEC-60)라 관제 ↔ 스테이징 피어링은 #101에서 만든다.
+# 관제 ↔ 운영. 스테이징은 별도 루트(DEC-60)이고 관제 ↔ 스테이징 피어링은 두지 않았다(스테이징은 스모크 테스트로 확인).
 module "peering_monitoring_prod" {
   source = "../modules/vpc_peering"
   count  = local.observability_vpc ? 1 : 0
@@ -173,7 +173,7 @@ module "monitoring" {
   db_identifier = module.data.db_identifier
 }
 
-# ---------- 중앙 로그 (E12 #97, DEC "중앙 로그는 ELK, Loki는 비교군") ----------
+# ---------- 중앙 로그 (E12 #97. 중앙 로그는 ELK, Loki는 비교군) ----------
 # 관제 VPC에 Elasticsearch·Kibana 단일 노드. 관제 서버와 다른 AZ(2c) 서브넷에 둔다
 module "logging" {
   source = "../modules/logging"

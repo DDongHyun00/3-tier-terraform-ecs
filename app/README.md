@@ -57,6 +57,8 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 
 ## 테스트 계정
 
+로컬 실행(docker compose) 전용입니다. 운영에서는 관리자 비밀번호를 Secrets Manager 값으로 바꿉니다.
+
 | 아이디 | 비밀번호 | 닉네임 | 권한 |
 |---|---|---|---|
 | user1 | 1111 | 페브리즈 | USER |
@@ -100,7 +102,7 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 
 > 스키마는 Flyway 마이그레이션(`V1__init.sql`)으로 관리하며, 아래 표는 그 기준입니다.
 > User, Posts, Comment, PostLike, Notification은 `BaseTimeEntity`를 상속해 `created_at`, `updated_at` 컬럼을 포함합니다.
-> 
+
 #### User (회원)
 | 컬럼명 | 타입 | 제약조건 | 설명 |
 |--------|------|----------|------|
@@ -176,8 +178,8 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 ## 설계 포인트
 - 정규화: 중복 최소화 및 무결성 유지
 - 관계 무결성: FK 제약과 UNIQUE 인덱스로 데이터 일관성 보장
-- 확장성: Notification 타입 컬럼을 두어 시스템 알림, 댓글 알림, 좋아요 알림 확장 가능
+- 확장성: 알림을 Notification 테이블로 분리해 다른 기능과 따로 늘릴 수 있음(알림 종류 컬럼은 두지 않음)
 - 보안: User 비밀번호는 BCrypt 해시 처리
-- 가독성: created_at / updated_at 컬럼을 모든 테이블에 포함해 변경 이력 추적 가능
+- 변경 추적: `BaseTimeEntity`를 상속한 5개 테이블(User, Posts, Comment, PostLike, Notification)에 created_at / updated_at 컬럼을 두어 생성·수정 시각 추적 가능
 - 사용자 경험: 마이페이지, 알림, 파일 첨부 기능 제공
 - 운영 편의성: 관리자 대시보드 제공

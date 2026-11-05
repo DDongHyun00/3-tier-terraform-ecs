@@ -12,7 +12,7 @@ locals {
 # 5xx 지표는 발생한 분에만 값이 있어 FILL로 0을 채운다. 요청이 적은 분은 비율을 0으로 둔다(alb_5xx_min_requests)
 resource "aws_cloudwatch_metric_alarm" "alb_5xx_rate" {
   alarm_name          = "${var.name_prefix}-alb-5xx-rate"
-  alarm_description   = "ALB 5xx 비율이 ${var.alb_5xx_rate_percent}%를 5분 중 3분 넘었다. 대시보드 ALB 5xx·ECS 태스크 수, 앱 로그 /ecs/${var.name_prefix}-board 확인"
+  alarm_description   = "ALB 5xx 비율이 ${var.alb_5xx_rate_percent}%를 5분 중 3분 넘었다. Grafana 대시보드와 Kibana(앱 로그)에서 확인"
   comparison_operator = "GreaterThanThreshold"
   threshold           = var.alb_5xx_rate_percent
   evaluation_periods  = 5

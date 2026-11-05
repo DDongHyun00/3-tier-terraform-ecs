@@ -10,7 +10,7 @@ Spring Boot 게시판(앱은 일부러 단순하게 두었습니다)을 AWS 3-Ti
 
 | 영역 | 결과 | 근거 |
 |---|---|---|
-| 재현성 | 리소스 148개를 **8분 51초**에 생성(접속 가능까지 9분 44초), **6분 51초**에 삭제. 모두 GitHub Actions에서 | [측정](docs/measurements.md), #50 |
+| 재현성 | 리소스 148개를 **8분 51초**에 생성(접속 가능까지 9분 44초), **6분 51초**에 삭제. 모두 GitHub Actions에서 | [최종 재생성](docs/measurements.md#최종-재생성-2026-11-05), [#50](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/50) |
 | 배포 | PR 머지 1번 → 빌드 → 스테이징 → 승인 → 운영 롤링. 수동 명령 13개를 대체 | [측정](docs/measurements.md#배포-소요-시간-2026-10-28) |
 | 롤백 | 기동 실패 이미지를 서킷 브레이커가 **5분 19초** 만에 되돌림. 그동안 응답 217회 모두 200 | [02](docs/troubleshooting/02-bad-image-rollback.md) |
 | 가용성 | 태스크 1개 강제 종료 사용자 영향 **0초**, RDS Multi-AZ 장애 조치 영향 **약 44초** | [01](docs/troubleshooting/01-task-killed.md), [06](docs/troubleshooting/06-rds-failover.md) |
@@ -31,8 +31,8 @@ flowchart LR
         direction LR
         subgraph PUB["퍼블릭 (2a, 2c)"]
             ALB[ALB + ACM]
-            NAT[리전 NAT]
         end
+        NAT[리전 NAT<br/>2a·2c EIP]
         subgraph PRIV["프라이빗 (2a, 2c)"]
             OD[EC2 온디맨드 2a<br/>태스크 1]
             SP[EC2 Spot 2c<br/>태스크 1 + 대기 1대]
@@ -63,10 +63,10 @@ flowchart LR
 | 계층 | 구성 | 선택 이유 |
 |---|---|---|
 | 진입 | Route 53, ACM, ALB, CloudFront + S3 | HTTPS 종료와 정적 파일 분리 |
-| 앱 | ECS on EC2(t3.small), 용량 공급자 2개(온디맨드 base 1 + Spot), AZ별 ASG | 호스트 수준 관측과 태스크·인스턴스 2단계 스케일링 측정([DEC-36](docs/adr/0036-fargate-to-ecs-on-ec2.md)), Spot은 실패 0건 확인 후 채택([DEC-67](docs/adr/0067-spot-capacity-mix.md)) |
+| 앱 | ECS on EC2(t3.small), 용량 공급자 2개(온디맨드 base 1 + Spot), AZ별 ASG | 호스트 수준 관측과 태스크·인스턴스 두 단계 스케일링 측정([DEC-36](docs/adr/0036-fargate-to-ecs-on-ec2.md)), Spot은 실패 0건 확인 후 채택([DEC-67](docs/adr/0067-spot-capacity-mix.md)) |
 | 데이터 | RDS PostgreSQL, Secrets Manager | 외부 비공개, 비밀번호는 태스크에 주입. Multi-AZ는 장애 실험 때만 |
 | 관제 | 별도 VPC의 Prometheus·Grafana, ELK, 피어링 | 운영과 장애 영역 분리([DEC-40](docs/adr/0040-three-vpcs-peering.md)). 관제가 죽어도 CloudWatch 비상 알람 2개는 남김 |
-| 스테이징 | 운영과 같은 모듈을 작은 값으로 호출한 별도 루트(`terraform/staging`), 별도 VPC | 운영 배포 전 같은 이미지를 검증. 평소에는 내려 두고 배포 흐름 시험 때만 생성. 관제와는 아직 잇지 않아 스테이징은 Grafana·Kibana로 보지 않음 |
+| 스테이징 | 운영과 같은 모듈을 작은 값으로 호출한 별도 루트(`terraform/staging`), 별도 VPC | 운영 배포 전 같은 이미지를 검증. 평소에는 내려 두고 배포 흐름 시험 때만 생성. 관제와 잇지 않고 배포 워크플로의 스모크 테스트(health·`/posts` 200)로 확인 |
 | 배포 | GitHub Actions + OIDC, ECR, 스테이징 → 운영 승인 배포 | 액세스 키 0개, 배포 역할은 서비스별 최소 권한([DEC-24](docs/adr/0024-deploy-role-least-privilege.md)) |
 
 설계 근거(CIDR·SG·IAM·태그 규칙, 요청·배포·알람 흐름)는 [docs/architecture.md](docs/architecture.md)에 있습니다.
@@ -86,10 +86,10 @@ flowchart LR
 
 | 실험 | 방법 | 사용자 영향 | 기록 |
 |---|---|---|---|
-| 태스크 강제 종료 | `ecs stop-task` 1개 / 2개 | 0초 / 46.5초 | [01](docs/troubleshooting/01-task-killed.md) |
+| 태스크 강제 종료 | `ecs stop-task` 1개 / 2개 | 0초 / 68.8초(EC2 재측정, Fargate 때 46.5초) | [01](docs/troubleshooting/01-task-killed.md) |
 | 잘못된 이미지 배포 | 기동 실패 이미지 머지 | 0건(자동 롤백 5분 19초) | [02](docs/troubleshooting/02-bad-image-rollback.md) |
 | DB 연결 차단 | FIS 네트워크 차단 10분 | 약 10분(liveness는 정상, 재연결 1초 미만) | [03](docs/troubleshooting/03-db-connection-failure.md) |
-| 컨테이너 인스턴스 종료 | ASG 인스턴스 종료 | 0초(관리형 드레이닝) | [04](docs/troubleshooting/04-instance-terminated.md) |
+| 컨테이너 인스턴스 종료 | ASG 인스턴스 종료 | 0초(ALB 5xx·연결 오류 기준, 관리형 드레이닝) | [04](docs/troubleshooting/04-instance-terminated.md) |
 | RDS 장애 조치 | Multi-AZ 강제 장애 조치 | 약 44초 | [06](docs/troubleshooting/06-rds-failover.md) |
 | Spot 회수 | FIS 회수 예고(2분) | 13건 → 개선 3번 → **0건** | [비용 10절](docs/cost.md#spot-회수-측정-aws-fis) |
 
@@ -147,3 +147,7 @@ flowchart LR
 | E11 | 관제 VPC, Prometheus·Grafana, 스테이징, 승인 배포 |
 | E12 | 중앙 로그(구조화 로그, FireLens, Elasticsearch·Kibana) |
 | E09 | 비용 분석(실제 청구액), Spot·관측 토글, 최종 재생성 측정 |
+
+## 작업 방식
+
+설계 결정과 장애 실험·측정은 직접 수행하고, AI는 코드 리뷰·검증과 실무 표준 확인에 활용했습니다.

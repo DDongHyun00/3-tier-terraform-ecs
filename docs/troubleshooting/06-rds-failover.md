@@ -1,6 +1,6 @@
 # RDS Multi-AZ 장애 조치
 
-RDS를 잠시 Multi-AZ로 켜고 강제 장애 조치(`reboot --force-failover`)를 일으켜, DB가 대기 인스턴스로 넘어가는 시간과 그동안 사용자가 받은 응답을 쟀다(#82). 평소에는 비용 때문에 Single-AZ로 둔다(DEC-7). 이 실험은 그 결정으로 감수한 위험이 Multi-AZ였다면 어느 정도로 줄어드는지 숫자로 남기려는 것이다.
+RDS를 잠시 Multi-AZ로 켜고 강제 장애 조치(`reboot --force-failover`)를 일으켜, DB가 대기 인스턴스로 넘어가는 시간과 그동안 사용자가 받은 응답을 쟀다(#82). 평소에는 비용 때문에 Single-AZ로 둔다. 이 실험은 그 결정으로 감수한 위험이 Multi-AZ였다면 어느 정도로 줄어드는지 숫자로 남기려는 것이다.
 
 | 항목 | 값 |
 |---|---|
@@ -66,10 +66,10 @@ RDS를 잠시 Multi-AZ로 켜고 강제 장애 조치(`reboot --force-failover`)
 | DB가 있는 AZ 전체 장애 | AZ가 회복되거나 스냅샷에서 다른 AZ로 복원할 때까지 중단(수십 분 이상) | 같은 방식으로 다른 AZ로 넘어감 |
 | 시간당 비용(db.t4g.micro + gp3 20 GB) | 0.03 USD | 약 0.06 USD |
 
-세션만 띄우는 지금 운영에서는 Single-AZ를 유지한다(DEC-7). 24시간 운영으로 바뀌면 시간당 0.03 USD로 DB 중단을 약 44초로 줄일 수 있다는 것이 이 실험의 결론이다.
+세션만 띄우는 지금 운영에서는 Single-AZ를 유지한다. 24시간 운영으로 바뀌면 시간당 0.03 USD로 DB 중단을 약 44초로 줄일 수 있다는 것이 이 실험의 결론이다.
 
 ## 근거
 
-- probe CSV: `local/captures/E8/probe-82.csv` (277줄, 실패 7줄)
+- probe 기록 277건 중 실패 7건
 - RDS 이벤트: `describe-events` 출력(위 타임라인)
 - ALB 지표: `AWS/ApplicationELB` `HTTPCode_Target_5XX_Count`·`HTTPCode_ELB_5XX_Count`·`HTTPCode_Target_2XX_Count`, 11:11~11:17 1분 단위

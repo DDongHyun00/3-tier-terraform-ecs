@@ -35,7 +35,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     # 잡 출력에는 태그만 넘긴다. 계정 ID가 든 이미지 주소는 mask-aws-account-id 때문에 비밀로 보고
-    # "Skip output 'image' since it may contain secret"으로 빠진다(#102 첫 실행 run 41945053452에서 실패).
+    # "Skip output 'image' since it may contain secret"으로 빠진다(첫 실행에서 실패해 확인).
     # 받는 잡이 자기 자격 증명의 계정으로 주소를 다시 조립한다. 태그가 같으니 같은 이미지다
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -68,7 +68,7 @@ jobs:
 
       # provenance=false: 증명 매니페스트 없이 이미지 하나만 올린다. 캐시는 GitHub Actions 캐시(mode=min, #36)
       # 빌드 요약·빌드 기록 아티팩트를 끈다. 둘 다 이미지 주소(계정 ID 포함)를 담고, 공개 레포에서는 누구나 본다.
-      # 로그 마스킹은 요약과 아티팩트에 닿지 않는다(#49 공개 전 점검에서 발견, 아티팩트 10개 삭제)
+      # 로그 마스킹은 요약·아티팩트에 닿지 않는다
       - name: build and push
         uses: docker/build-push-action@v6
         env:

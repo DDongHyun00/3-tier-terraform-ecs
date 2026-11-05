@@ -13,7 +13,7 @@ param(
     [double]$IntervalSeconds = 1,
     # curl --max-time. ALB 유휴 시간 60초보다 짧고, Hikari 연결 대기 30초보다 길게
     [int]$MaxTimeSeconds = 40,
-    # 기본은 레포의 local/captures/E8/probe-<시작 시각>.csv (local/은 추적하지 않는다)
+    # 기본은 레포 안의 추적하지 않는 기록 폴더에 probe-<시작 시각>.csv로 남긴다. 다른 곳에 두려면 -OutFile
     [string]$OutFile
 )
 

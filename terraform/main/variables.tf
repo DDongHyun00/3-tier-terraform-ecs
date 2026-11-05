@@ -1,5 +1,5 @@
 # main 루트 모듈의 입력. 환경에 따라 달라질 값은 전부 여기로 뺀다.
-# 환경이 늘어나면 terraform/envs/<env>/로 옮기고 tfvars만 바꾸는 구조.
+# 스테이징은 별도 루트(terraform/staging)가 같은 모듈을 작은 값으로 호출한다.
 
 variable "env" {
   description = "환경 이름. 리소스 이름(3tier-<env>-*)과 태그 Env에 쓴다"
