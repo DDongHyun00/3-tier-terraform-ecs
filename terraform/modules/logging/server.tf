@@ -97,10 +97,17 @@ resource "terraform_data" "network_egress" {
 }
 
 # ---------- 서버 ----------
+# 사설 IP를 고정한다(#144). FireLens 출력 주소(Host)가 이 IP라, 서버가 교체되면 태스크 정의는 새 리비전이 되지만
+# 서비스가 task_definition 변경을 무시해 떠 있는 태스크는 옛 IP로 계속 보낸다. 고정하면 서버를 바꿔도 주소가 같다
+data "aws_subnet" "server" {
+  id = var.subnet_id
+}
+
 resource "aws_instance" "server" {
   ami                    = data.aws_ssm_parameter.al2023_arm64.value
   instance_type          = var.instance_type
   subnet_id              = var.subnet_id
+  private_ip             = cidrhost(data.aws_subnet.server.cidr_block, var.private_ip_hostnum)
   vpc_security_group_ids = [aws_security_group.elk.id]
   iam_instance_profile   = aws_iam_instance_profile.server.name
 

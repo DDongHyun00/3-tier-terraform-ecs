@@ -12,6 +12,8 @@ E12에서 앱 로그를 ECS JSON(#99)으로 내고 FireLens(#98)로 관제 VPC�
 
 - 문서 하나 = 로그 한 줄. 앱 필드(`@timestamp`, `log.level`, `log.logger`, `message`, `error.*`, `http.request.id`, `http.request.method`, `http.response.status_code`, `url.path`, `event.duration_ms`)와 FireLens가 붙인 ECS 메타데이터(`ecs_cluster`, `ecs_task_arn`, `ecs_task_definition`, `ec2_instance_id`)가 들어간다.
 - `http.request.id`는 ALB가 붙이는 `X-Amzn-Trace-Id`다. ALB 접근 로그와도 같은 값으로 이을 수 있다.
+- 인덱스 템플릿 `app-board`가 `log`를 객체로 고정하고, 기본 수집 파이프라인 `app-board-normalize`가 JSON이 아닌 줄(JVM 경고 등)의 문자열 `log`를 `message`(이미 있으면 `log_raw`)로 옮긴다(#144). 이 처리 전에는 날짜별 인덱스의 첫 문서가 평문이면 `log`가 text로 굳어 그날 JSON 로그가 모두 `document_parsing_exception`으로 거부됐다(11/05 운영에서 발생, 로컬 ES 9.5.5에서 같은 순서로 재현).
+- ELK 서버 사설 IP는 서브넷의 10번 호스트로 고정했다. FireLens 출력 주소가 이 IP이고, 서비스는 태스크 정의 변경을 무시하므로 서버가 교체돼도 주소가 같아야 한다.
 
 ## 2. 장애 추적: DB 연결 차단 (2026-11-05)
 
@@ -68,7 +70,7 @@ E08 #43과 같은 FIS 실험(DB 서브넷 네트워크 ACL 차단 10분)을 다�
 | 메모리 | 없음 | 큼(이번 2.6 GB) | 작음(레이블 색인만) |
 | 운영 부담 | 없음(관리형), 보존 기간만 정함 | 힙·디스크 워터마크·인덱스 수명주기·보안 설정·버전 업그레이드 | ELK보다 적음. 레이블 설계를 잘못하면 성능 문제(카디널리티) |
 | 수집 경로 | awslogs 드라이버(설정 없음) | FireLens 사이드카 + SG·피어링·계정 | FireLens 또는 Promtail·Alloy |
-| 이번에 겪은 문제 | 없음 | 출발지 SG 실수로 로그 10분 유실, 앱 로그를 CloudWatch와 병행하지 않아 복구 불가 | (미설치) |
+| 이번에 겪은 문제 | 없음 | 출발지 SG 실수로 로그 10분 유실, 앱 로그를 CloudWatch와 병행하지 않아 복구 불가. 동적 매핑 충돌로 하루치 JSON 로그 거부(#144) | (미설치) |
 
 ### 3.4 판단
 
