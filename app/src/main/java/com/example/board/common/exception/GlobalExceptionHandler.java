@@ -51,6 +51,15 @@ public class GlobalExceptionHandler {
                 : view("error/404", HttpStatus.NOT_FOUND, msg);
     }
 
+//    404: URL로 가리킨 글·댓글·파일이 없음 (#132). 사용자 입력 오류라 error가 아닌 warn
+    @ExceptionHandler(NotFoundException.class)
+    public Object handleNotFound(NotFoundException ex, HttpServletRequest request) {
+        log.warn("404 Not Found: {} {}", request.getRequestURI(), ex.getMessage());
+        String msg = ex.getMessage();
+        return isAjax(request) ? json(HttpStatus.NOT_FOUND, msg)
+                : view("error/404", HttpStatus.NOT_FOUND, msg);
+    }
+
 //    403: 권한 없음
     @ExceptionHandler(AccessDeniedException.class)
     public Object handle403(AccessDeniedException ex, HttpServletRequest request) {

@@ -1,5 +1,6 @@
 package com.example.board.board.service;
 
+import com.example.board.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import com.example.board.board.dto.PostRequestDto;
 import com.example.board.board.dto.PostResponseDto;
@@ -54,7 +55,7 @@ public class PostService {
     @Transactional
     public Post viewPost(Long id) {
         Post post = postRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
         post.setViewCount(post.getViewCount() + 1);
         return post;
     }
@@ -63,7 +64,7 @@ public class PostService {
     @Transactional(readOnly = true)
     public Post getPost(Long id) {
         return postRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
     }
 
     @Transactional
@@ -87,7 +88,7 @@ public class PostService {
     @Transactional
     public void updatePost(Long id, String username, PostRequestDto dto, List<MultipartFile> files) {
         Post post = postRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
         if (!post.getUser().getUsername().equals(username)) {
             throw new SecurityException("작성자 본인만 수정할 수 있습니다.");
         }
@@ -101,7 +102,7 @@ public class PostService {
     @Transactional
     public void delete(Long id, String username) {
         Post post = postRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
         if (!post.getUser().getUsername().equals(username)) {
             throw new SecurityException("작성자 본인만 삭제할 수 있습니다.");
         }
