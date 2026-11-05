@@ -4,3 +4,6 @@ github_repo    = "DDongHyun00/3-tier-terraform-ecs" # OIDC 배포 역할을 수�
 domain_name    = "3tier.link"                        # Route 53 호스팅 존
 slack_team_id    = "T00000000" # Q Developer에 인증한 Slack 워크스페이스 ID
 slack_channel_id = "C00000000" # 알람 채널 #aws-alerts ID
+
+# 예산 알림 이메일(#44). 비우면 예산을 만들지 않는다
+budget_email = ""
