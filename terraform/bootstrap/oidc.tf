@@ -42,6 +42,8 @@ data "aws_iam_policy_document" "github_trust" {
       values = [
         "${local.github_sub_prefix}:ref:refs/heads/main",
         "${local.github_sub_prefix}:pull_request",
+        # 승인 배포(#102, DEC-61): production 잡은 Environment를 써서 sub가 environment:production이 된다
+        "${local.github_sub_prefix}:environment:production",
       ]
     }
   }
