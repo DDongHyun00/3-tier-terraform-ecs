@@ -31,7 +31,7 @@ E08 #43과 같은 FIS 실험(DB 서브넷 네트워크 ACL 차단 10분)을 다�
 
 - 사용자 영향: `/posts` 500·`/actuator/health` 503 각 566건, liveness 실패 0(태스크 교체 없음, E08과 같은 설계 의도).
 - **추적 과정**: Kibana에서 `http.response.status_code:500`으로 첫 실패 요청을 찾고, 그 `http.request.id`로 필터하면 같은 요청 안에서 Hikari가 "연결이 닫혔다"고 남긴 WARN이 나온다. 이어서 `message:"Connection is not available"`(194건)과 `log.level:ERROR`가 DB 연결 풀 고갈을 확인해 준다. 앱 코드가 아니라 DB 연결 경로 문제라는 결론까지 로그만으로 갈 수 있었다.
-- **탐지**: 로그에는 10.7초 만에 원인 줄이 있었지만 알림은 CloudWatch 비상 알람(5분 58.6초)뿐이었다. Grafana 규칙(CPU·타깃 0개·RDS)은 이 장애를 보지 않는다. 앱 5xx 비율 규칙(`http_server_requests_seconds_count{status=~"5.."}`)을 Grafana에 더하는 것이 다음 후보다.
+- **탐지**: 로그에는 10.7초 만에 원인 줄이 있었지만 알림은 CloudWatch 비상 알람(5분 58.6초)뿐이었다. Grafana 규칙(CPU·타깃 0개·RDS)은 이 장애를 보지 않는다. 이 공백을 메우려고 Grafana에 앱 5xx 비율 규칙 AppHttp5xxRate(`http_server_requests_seconds_count{status=~"5.."}`)를 더했다(#131). 시험에서는 500 발생 1분 27.7초 뒤 알림이 SNS로 발송됐다.
 - E08(Fargate, CloudWatch Logs 평문) 때는 실패 줄(`Connection is not available, request timed out after 30000ms`)을 문자열로 찾고 probe·RDS 지표로 앞뒤를 맞췄다. 이번에는 필드 검색과 요청 ID로 "어떤 요청이 왜 실패했는지"를 한 번에 이었다.
 
 ## 3. 비교: ELK vs Loki vs CloudWatch Logs
@@ -70,7 +70,7 @@ E08 #43과 같은 FIS 실험(DB 서브넷 네트워크 ACL 차단 10분)을 다�
 | 메모리 | 없음 | 큼(이번 2.6 GB) | 작음(레이블 색인만) |
 | 운영 부담 | 없음(관리형), 보존 기간만 정함 | 힙·디스크 워터마크·인덱스 수명주기·보안 설정·버전 업그레이드 | ELK보다 적음. 레이블 설계를 잘못하면 성능 문제(카디널리티) |
 | 수집 경로 | awslogs 드라이버(설정 없음) | FireLens 사이드카 + SG·피어링·계정 | FireLens 또는 Promtail·Alloy |
-| 이번에 겪은 문제 | 없음 | 출발지 SG 실수로 로그 10분 유실, 앱 로그를 CloudWatch와 병행하지 않아 복구 불가. 동적 매핑 충돌로 하루치 JSON 로그 거부(#144) | (미설치) |
+| 이번에 겪은 문제 | 없음 | 출발지 SG를 잘못 지정해 로그 10분 유실, 앱 로그를 CloudWatch와 병행하지 않아 복구 불가. 동적 매핑 충돌로 하루치 JSON 로그 거부(#144) | (미설치) |
 
 ### 3.4 판단
 

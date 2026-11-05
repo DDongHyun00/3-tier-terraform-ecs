@@ -1,187 +1,153 @@
 # 3-tier-terraform-ecs
 
-Spring Boot 게시판 앱을 AWS 3-Tier 구조(ALB → ECS → RDS)에 Terraform으로 구축하고, 배포·모니터링·장애 재현·비용 관리까지 자동화하는 개인 프로젝트입니다. 컴퓨트는 Fargate로 시작해(v1, 태그 `v1-fargate`) 호스트 관측과 2단계 스케일링 측정을 위해 ECS on EC2로 전환했습니다(v2).
+**3계층 웹 서비스를 Terraform으로 구축하고, 장애 주입과 측정으로 가용성·관측성·비용을 개선한 기록입니다.**
 
-> 진행 중입니다. 아래 내용 중 "예정"으로 표시한 부분은 아직 구현 전입니다.
+Spring Boot 게시판(앱은 일부러 단순하게 두었습니다)을 AWS 3-Tier(ALB → ECS on EC2 → RDS)에 올리고, 배포 자동화·모니터링·중앙 로그·장애 실험·비용 최적화를 직접 만들었습니다. "구축했다"에서 멈추지 않고, 장애를 일부러 일으켜 **사용자 영향을 숫자로 재고 → 원인을 찾고 → 고치고 → 다시 재는** 순서로 진행했습니다.
+
+![게시판 화면](docs/images/01-site.jpg)
+
+## 핵심 결과
+
+| 영역 | 결과 | 근거 |
+|---|---|---|
+| 재현성 | 리소스 148개를 **8분 51초**에 생성(접속 가능까지 9분 44초), **6분 51초**에 삭제. 모두 GitHub Actions에서 | [최종 재생성](docs/measurements.md#최종-재생성-2026-11-05), [#50](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/50) |
+| 배포 | PR 머지 1번 → 빌드 → 스테이징 → 승인 → 운영 롤링. 수동 명령 13개를 대체 | [측정](docs/measurements.md#배포-소요-시간-2026-10-28) |
+| 롤백 | 기동 실패 이미지를 서킷 브레이커가 **5분 19초** 만에 되돌림. 그동안 응답 217회 모두 200 | [02](docs/troubleshooting/02-bad-image-rollback.md) |
+| 가용성 | 태스크 1개 강제 종료 사용자 영향 **0초**, RDS Multi-AZ 장애 조치 영향 **약 44초** | [01](docs/troubleshooting/01-task-killed.md), [06](docs/troubleshooting/06-rds-failover.md) |
+| Spot 회수 | FIS로 회수 예고를 보내며 개선을 반복해 요청 실패 **13 → 18 → 12 → 0건** | [비용 10절](docs/cost.md#10-spot-용량-공급자와-관측-토글-e09-46), [DEC-67](docs/adr/0067-spot-capacity-mix.md) |
+| 탐지 | CPU 과부하 알림 Grafana **4분 10초** vs CloudWatch 6분 26초. 1분 남짓 전체 중단은 Grafana만 잡음(약 50초) | [관측 비교](docs/monitoring.md) |
+| 원인 추적 | DB 차단 장애에서 로그에 원인 줄이 **10.7초** 만에 남고, 같은 요청 ID로 500 응답까지 연결 | [중앙 로그](docs/logging.md) |
+| 비용 | 쓰지 않을 때 destroy로 월 195 → 22.79 USD(**−88%**, 요금표 추정, v1 기준). Spot으로 컴퓨트 −15%, 관측 서버를 끈 세션 −34% | [비용 리포트](docs/cost.md) |
 
 ## 아키텍처
 
-- 사용자 → Route 53 + ACM(HTTPS) → ALB(퍼블릭 서브넷) → ECS on EC2(프라이빗 서브넷, AZ 2곳, t3.small 용량 공급자·ASG) → RDS(DB 서브넷)
-- 배포: GitHub Actions(OIDC 인증) → ECR → ECS 롤링 배포, 실패 시 자동 롤백
-- 모니터링: CloudWatch 알람 → SNS → Amazon Q Developer in chat applications → Slack
-- 보안: 액세스 키 없는 배포(OIDC), DB 비밀번호는 Secrets Manager로 주입, DB는 외부 비공개
-- 비용: 리소스 태그 표준(Project / Env / Owner), AWS Budgets
+```mermaid
+flowchart LR
+    U[사용자] -->|HTTPS 3tier.link| R53[Route 53]
+    R53 --> ALB
+    U -->|정적 파일| CF[CloudFront] -->|OAC| S3[(S3)]
+
+    subgraph PROD["운영 VPC 10.0.0.0/16"]
+        direction LR
+        subgraph PUB["퍼블릭 (2a, 2c)"]
+            ALB[ALB + ACM]
+        end
+        NAT[리전 NAT<br/>2a·2c EIP]
+        subgraph PRIV["프라이빗 (2a, 2c)"]
+            OD[EC2 온디맨드 2a<br/>태스크 1]
+            SP[EC2 Spot 2c<br/>태스크 1 + 대기 1대]
+        end
+        subgraph DBS["DB 서브넷"]
+            RDS[(RDS PostgreSQL)]
+        end
+    end
+
+    subgraph MON["관제 VPC 10.100.0.0/16"]
+        PG[Prometheus · Grafana]
+        ELK[Elasticsearch · Kibana]
+    end
+
+    subgraph STG["스테이징 VPC 10.1.0.0/16 (필요할 때만)"]
+        SALB[ALB] --> SEC[EC2 온디맨드 1대<br/>태스크 1] --> SRDS[(RDS)]
+    end
+
+    ALB --> OD & SP
+    OD & SP --> RDS
+    OD & SP -.->|FireLens 로그| ELK
+    PG -.->|지표 수집| OD & SP
+    PROD <-->|VPC 피어링| MON
+    PG -->|알림| SNS[SNS] --> SL[Slack]
+    CW[CloudWatch 비상 알람] --> SNS
+```
+
+| 계층 | 구성 | 선택 이유 |
+|---|---|---|
+| 진입 | Route 53, ACM, ALB, CloudFront + S3 | HTTPS 종료와 정적 파일 분리 |
+| 앱 | ECS on EC2(t3.small), 용량 공급자 2개(온디맨드 base 1 + Spot), AZ별 ASG | 호스트 수준 관측과 태스크·인스턴스 두 단계 스케일링 측정([DEC-36](docs/adr/0036-fargate-to-ecs-on-ec2.md)), Spot은 실패 0건 확인 후 채택([DEC-67](docs/adr/0067-spot-capacity-mix.md)) |
+| 데이터 | RDS PostgreSQL, Secrets Manager | 외부 비공개, 비밀번호는 태스크에 주입. Multi-AZ는 장애 실험 때만 |
+| 관제 | 별도 VPC의 Prometheus·Grafana, ELK, 피어링 | 운영과 장애 영역 분리([DEC-40](docs/adr/0040-three-vpcs-peering.md)). 관제가 죽어도 CloudWatch 비상 알람 2개는 남김 |
+| 스테이징 | 운영과 같은 모듈을 작은 값으로 호출한 별도 루트(`terraform/staging`), 별도 VPC | 운영 배포 전 같은 이미지를 검증. 평소에는 내려 두고 배포 흐름 시험 때만 생성. 관제와 잇지 않고 배포 워크플로의 스모크 테스트(health·`/posts` 200)로 확인 |
+| 배포 | GitHub Actions + OIDC, ECR, 스테이징 → 운영 승인 배포 | 액세스 키 0개, 배포 역할은 서비스별 최소 권한([DEC-24](docs/adr/0024-deploy-role-least-privilege.md)) |
+
+설계 근거(CIDR·SG·IAM·태그 규칙, 요청·배포·알람 흐름)는 [docs/architecture.md](docs/architecture.md)에 있습니다.
+
+## 화면
+
+| | |
+|---|---|
+| ![ECS 용량 공급자](docs/images/02-ecs-capacity-providers.jpg)<br/>온디맨드·Spot 용량 공급자와 AZ별 인스턴스 | ![대상 그룹](docs/images/03-target-group-healthy.jpg)<br/>ALB 대상 그룹 healthy |
+| ![승인 배포](docs/images/04-deploy-approval.jpg)<br/>빌드 → 스테이징 → 운영 승인 대기 | ![부하 중 대시보드](docs/images/05-cloudwatch-dashboard-load.jpg)<br/>200 RPS 부하 중 대시보드(E07 당시 CloudWatch 대시보드, 이후 Grafana로 옮김) |
+| ![스케일 아웃·인](docs/images/06-scale-out-in.jpg)<br/>태스크 2 → 4 → 2 | ![Slack 알람](docs/images/07-slack-alarm.jpg)<br/>5xx 비율 알람과 해소 |
+| ![Kibana](docs/images/08-kibana-trace.jpg)<br/>요청 ID로 로그 추적 | |
+
+## 장애 실험
+
+모든 실험은 1초 간격 요청 기록([scripts/probe.ps1](scripts/probe.ps1))을 함께 돌려 사용자 영향을 쟀습니다.
+
+| 실험 | 방법 | 사용자 영향 | 기록 |
+|---|---|---|---|
+| 태스크 강제 종료 | `ecs stop-task` 1개 / 2개 | 0초 / 68.8초(EC2 재측정, Fargate 때 46.5초) | [01](docs/troubleshooting/01-task-killed.md) |
+| 잘못된 이미지 배포 | 기동 실패 이미지 머지 | 0건(자동 롤백 5분 19초) | [02](docs/troubleshooting/02-bad-image-rollback.md) |
+| DB 연결 차단 | FIS 네트워크 차단 10분 | 약 10분(liveness는 정상, 재연결 1초 미만) | [03](docs/troubleshooting/03-db-connection-failure.md) |
+| 컨테이너 인스턴스 종료 | ASG 인스턴스 종료 | 0초(ALB 5xx·연결 오류 기준, 관리형 드레이닝) | [04](docs/troubleshooting/04-instance-terminated.md) |
+| RDS 장애 조치 | Multi-AZ 강제 장애 조치 | 약 44초 | [06](docs/troubleshooting/06-rds-failover.md) |
+| Spot 회수 | FIS 회수 예고(2분) | 13건 → 개선 3번 → **0건** | [비용 10절](docs/cost.md#spot-회수-측정-aws-fis) |
+
+실험 중 드러난 운영 문제도 같은 형식으로 남겼습니다(예: destroy 때 NAT가 먼저 지워져 서비스가 DRAINING에 멈춘 사고 [05](docs/troubleshooting/05-destroy-nat-order.md)).
+
+## 실행 방법
+
+1. `terraform/bootstrap`을 한 번 apply합니다(state 버킷, OIDC, 배포 역할, ECR, 호스팅 존). 값은 `terraform.tfvars.example`을 참고합니다.
+2. 이후 인프라는 평소에는 GitHub Actions로 다루고, 장애 실험용 변수(예: RDS Multi-AZ, [06](docs/troubleshooting/06-rds-failover.md))만 로컬 apply로 줍니다.
+   - `terraform/**`를 바꾼 PR: plan 결과가 코멘트로 달리고, 머지하면 운영에 apply됩니다.
+   - 수동: Actions → `terraform` → `action=apply` 또는 `destroy`
+   - 관측 서버 없이 띄우기: `enable_monitoring=false`, `enable_logging=false`
+3. `app/**`를 바꾼 PR을 머지하면 이미지를 한 번 빌드해 스테이징 → (승인) → 운영 순서로 배포합니다.
+4. 로컬 실행은 `docker compose up`(앱 + PostgreSQL). 앱 설명은 [app/README.md](app/README.md)에 있습니다.
 
 ## 폴더 구조
 
 ```
 .
-├── app/                  게시판 앱 (Spring Boot, Dockerfile 포함)
-├── docker-compose.yml    로컬 확인용: 앱 + PostgreSQL
-├── docs/                 아키텍처 설계 문서, 비용 리포트
-├── load/                 k6 부하 테스트 스크립트 (오토스케일링 확인)
-├── scripts/              장애 재현 보조 스크립트 (응답 기록 probe.ps1)
+├── app/                  게시판 앱 (Spring Boot, Dockerfile)
+├── docs/                 설계, 비용, 관측·로그 비교, 측정 상세, 장애 기록, ADR, 화면
+├── load/                 k6 부하 시험
+├── scripts/              장애 실험용 요청 기록(probe.ps1)
 ├── terraform/
-│   ├── bootstrap/        최초 1회 생성 후 유지: state 버킷, OIDC Provider, Route 53, ECR
-│   ├── main/             반복 생성·삭제: 모듈 호출, 변수, 출력 (terraform.tfvars.example 참고)
-│   └── modules/          network(VPC·서브넷·NAT·SG), data(RDS·Secrets Manager·S3·CloudFront),
-│                         compute(ALB·ECS 클러스터·EC2 용량 공급자·ASG·서비스), observability(알람·SNS·오토스케일링)
-└── .github/workflows/    ci(앱 테스트·Terraform 검증), deploy(이미지 빌드 → ECS 롤링 배포), terraform(plan 코멘트, 머지 시 apply, 수동 destroy)
+│   ├── bootstrap/        최초 1회: state 버킷, OIDC, 배포 역할, ECR, Route 53, 예산, FIS 템플릿
+│   ├── main/             운영: 반복 생성·삭제
+│   ├── staging/          스테이징: 필요한 세션에만
+│   └── modules/          network, data, compute, observability, monitoring, logging, vpc_peering
+└── .github/workflows/    ci, deploy(스테이징 → 운영 승인), terraform, terraform-staging
 ```
-
-앱 설명은 [app/README.md](app/README.md)에 있습니다.
 
 ## 문서
 
-- [아키텍처 설계](docs/architecture.md): CIDR·서브넷·SG·IAM·태그 규칙, 다이어그램
-- [비용 리포트](docs/cost.md): 월 예상 비용, 최적화 전후, 항목별 절감 판단, NAT Gateway 트레이드오프
-- [관측 비교](docs/monitoring.md): CloudWatch vs Prometheus·Grafana 알림 지연 실측, 비용 손익분기, 운영 부담
-- [중앙 로그](docs/logging.md): 로그로 DB 장애 추적(요청 ID로 원인 줄까지), ELK·Loki·CloudWatch Logs 비용·운영 비교
-- [장애 재현 기록](docs/troubleshooting/): 태스크 강제 종료, 잘못된 이미지 롤백, DB 연결 실패, 컨테이너 인스턴스 종료 (증상 → 원인 → 해결 → 재발 방지)
-- [프로젝트 히스토리 (Notion)](https://app.notion.com/p/3f4330bd3846812395f4d19208283e9c): 에픽별 서사, 결정 기록(ADR), 트러블슈팅
-- 작업 추적: [Issues](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues) · [Milestones](https://github.com/DDongHyun00/3-tier-terraform-ecs/milestones) · [Project 보드](https://github.com/users/DDongHyun00/projects/11)
+| 문서 | 내용 |
+|---|---|
+| [아키텍처 설계](docs/architecture.md) | CIDR·서브넷·SG·IAM·태그 규칙, 흐름도, 품질 목표치, 위험 |
+| [측정 상세](docs/measurements.md) | 배포·롤백·부하·장애·EC2 전환 전후 측정표 |
+| [비용 리포트](docs/cost.md) | 월 예상 비용, 실제 청구액, NAT 트레이드오프, Spot·관측 토글 |
+| [관측 비교](docs/monitoring.md) | CloudWatch vs Prometheus·Grafana: 탐지 지연 실측, 비용 손익분기 |
+| [중앙 로그](docs/logging.md) | 로그로 DB 장애 추적, ELK·Loki·CloudWatch Logs 비교 |
+| [장애 기록](docs/troubleshooting/) | 증상 → 원인 → 조치 → 재발 방지 |
+| [결정 기록(ADR)](docs/adr/) | 대표 결정 9건: 배경 → 선택지 → 결정 → 결과 |
+| [프로젝트 히스토리 (Notion)](https://app.notion.com/p/3f4330bd3846812395f4d19208283e9c) | 에픽별 구축 기록, 결정 67건, 트러블슈팅, 실측 기록 DB |
+| 작업 추적 | [Issues](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues?q=is%3Aissue) · [Milestones](https://github.com/DDongHyun00/3-tier-terraform-ecs/milestones?state=closed) · [Project 보드](https://github.com/users/DDongHyun00/projects/11) |
 
-## 측정
+## 진행 과정
 
-### 배포 소요 시간 (2026-10-28)
+| 에픽 | 내용 |
+|---|---|
+| E01~E02 | 앱 클라우드 대응(PostgreSQL, Flyway, 헬스체크, S3, 컨테이너), 설계 |
+| E03~E05 | Terraform bootstrap, 네트워크·데이터, 컴퓨트·HTTPS |
+| E06 | CI/CD(OIDC, 롤링 배포, plan 코멘트), 레포 보호 |
+| E07~E08 | 오토스케일링·부하 시험, 장애 재현 |
+| E10 | Fargate → ECS on EC2 전환과 전후 비교 |
+| E11 | 관제 VPC, Prometheus·Grafana, 스테이징, 승인 배포 |
+| E12 | 중앙 로그(구조화 로그, FireLens, Elasticsearch·Kibana) |
+| E09 | 비용 분석(실제 청구액), Spot·관측 토글, 최종 재생성 측정 |
 
-main에 `app/**` 변경이 머지되면 GitHub Actions가 이미지를 빌드해 ECR에 올리고 ECS 서비스를 롤링 배포합니다(태스크 2개, 최소 100% / 최대 200%). 수동은 같은 단계(로컬 docker build → ECR push → 태스크 정의 등록 → 서비스 갱신 → 안정화 대기)를 명령 13개로 실행했습니다. E05 수동 배포 때는 빌드 시작 시각을 남기지 않아 전체 시간이 없어서, 같은 날 같은 단계를 다시 재서 비교했습니다.
+## 작업 방식
 
-| 구간 | 수동 | 자동 ① 캐시 적중 | 자동 ② 코드 변경 | 측정 방법 |
-|---|---|---|---|---|
-| 머지 → 러너 시작 | - | 9초 | 13초 | PR 머지 시각, 워크플로 타이머 시작 |
-| 이미지 빌드·ECR push | 1분 56초 | 1분 31초 | 3분 58초 | 명령 시각 / 워크플로 Step Summary |
-| ECS 롤링 (새 배포 → COMPLETED) | 3분 16초 | 3분 21초 | 3분 22초 | ECS 서비스 이벤트 |
-| 시작 → 서비스 안정화 (ECS 기준) | 5분 18초 | 5분 5초 | 7분 38초 | ECS 서비스 이벤트 |
-| 시작 → 워크플로 종료 (워크플로 기준) | - | 7분 18초 | 10분 16초 | 워크플로 실행 종료 시각 |
-| 사람이 하는 일 | 명령 13개 | PR 머지 1번 | PR 머지 1번 | |
-
-- 수동 값은 명령을 스크립트로 이어 실행한 최솟값입니다. 사람이 명령을 하나씩 입력하고 확인하는 시간은 들어 있지 않습니다.
-- 자동 ①은 앱 코드가 이전 이미지와 같아 빌드 캐시가 모두 적중했고, ②는 Java 소스를 바꿔 다시 컴파일했습니다. ②의 빌드·push 3분 58초 중 2분 36초는 다음 빌드를 위한 GitHub Actions 캐시 내보내기(`cache-to: type=gha,mode=max`)이고, 이미지는 빌드 시작 1분 11초 만에 ECR에 올라갔습니다.
-- 워크플로 종료가 ECS 기준보다 2~2.5분 늦습니다. 배포 액션이 서비스 안정화를 폴링하는 간격이 지수로 늘어나기 때문입니다(최소 15초, SDK 기본 최대 600초).
-- 벽시계 시간은 수동 최솟값과 비슷하거나(①) 캐시 내보내기만큼 더 걸렸습니다(②). 자동화로 줄어든 것은 사람이 하는 일(명령 13개 → 머지 1번)과 그 사이 실수할 여지입니다.
-- 근거: 자동 ① [run 40645647368](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/40645647368), ② [run 40646991446](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/40646991446)
-
-### 롤백 소요 시간 (서킷 브레이커, 2026-10-28)
-
-환경이 하나라 운영(prod)에서 의도적으로 실험했습니다. 실무라면 스테이징에서 합니다.
-
-기동에 실패하는 이미지를 배포했습니다. 앱이 읽는 버킷 환경 변수 이름을 `ASSETS_BUCKET`으로 바꿨고 태스크 정의는 그대로 `S3_BUCKET`을 넣습니다. 테스트는 로컬 저장소를 써서 CI는 통과하고, 운영에서만 기동 중 예외로 종료됩니다([#67](https://github.com/DDongHyun00/3-tier-terraform-ecs/pull/67), 되돌림 [#68](https://github.com/DDongHyun00/3-tier-terraform-ecs/pull/68)).
-
-| 구간 | 시간 | 측정 방법 |
-|---|---|---|
-| 실패 배포 시작 → 실패 판정 | 4분 5초 | ECS 이벤트 `deployment failed: tasks failed to start` |
-| 실패 판정 → 이전 리비전 COMPLETED | 1분 14초 | ECS 이벤트 `rolling back to deployment` → `deployment completed` |
-| 롤백 전체 (실패 배포 시작 → 이전 리비전 복귀) | 5분 19초 | ECS 서비스 이벤트 |
-| 머지 → 이전 리비전 복귀 | 7분 44초 | PR 머지 시각, ECS 서비스 이벤트 |
-| 워크플로가 실패를 알린 시각 | 복귀 8분 33초 뒤 | 워크플로 로그 |
-| 롤백 중 사이트 응답 | 217회 중 217회 200 | liveness 5초 간격 |
-
-- 새 태스크 5개가 모두 기동 중 종료됐고, 실패 수가 서킷 브레이커 임계값 3(원하는 태스크 수 × 50%, 최소 3)에 닿자 직전 배포로 되돌렸습니다.
-- 최소 정상 비율이 100%라 기존 태스크 2개가 그동안 계속 트래픽을 받았습니다.
-- 워크플로 알림이 늦은 이유는 위의 폴링 간격입니다. 오래 기다린 배포일수록 간격이 길어집니다.
-- 근거: [run 40643279590](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/40643279590)
-
-### 오토스케일링·부하 시험 (E07, 2026-10-29)
-
-ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스크 2~4개)이 부하에 맞춰 늘고 주는지 k6로 확인했습니다. 스크립트와 실행법은 [load/README.md](load/README.md)에 있습니다.
-
-조건:
-- 비로그인 GET, 목록 3 : 상세 7, 초당 요청 수를 고정하는 방식(`ramping-arrival-rate`)
-- 본 시험 200 RPS, 12분(오르막 1분, 유지 10분, 내리막 1분)
-- 부하는 로컬 PC(가정망 → 서울 리전)에서 줬고, 시험 중 PC CPU는 80% 미만이었습니다.
-- 응답 시간은 클라이언트(k6)와 서버(ALB `TargetResponseTime`)를 함께 적었습니다. 클라이언트 값에는 가정망 구간이 섞입니다. 두 값의 차이는 참고값입니다. 두 백분위에 해당하는 요청이 서로 다를 수 있어서, 차이가 곧 망 지연은 아닙니다.
-
-**보정(포화점 찾기)**: 30 → 60 → 120 → 200 RPS를 1분씩 줬습니다.
-
-| RPS | ECS 평균 CPU | ALB p95 |
-|---|---|---|
-| 30 | 15% | 34 ms |
-| 60 | 30% | 26 ms |
-| 120 | 48% | 26 ms |
-| 200 | 83% | 3.97초 |
-
-태스크 2개(0.5 vCPU)는 약 125 RPS에서 포화했습니다(태스크당 약 60 RPS). 그래서 본 시험은 포화점을 넘는 200 RPS로 했습니다.
-
-**스케일 아웃·인 소요 시간**
-
-| 구간 | 시각(KST) | 소요 |
-|---|---|---|
-| 부하 시작 → 늘림 결정(desired 4) | 16:03:58 → 16:10:51 | 약 7분 |
-| 늘림 결정 → 태스크 시작 → 타깃 등록 → 4개 모두 healthy | 16:10:51 → 16:10:56 → 16:11:25 → 16:12:11 | 기동 75초 |
-| 부하 종료 → 줄임 알람(AlarmLow) | 16:15:56 → 16:32:53 | 17분 |
-| 줄임 1차(desired 3) → 쿨다운 300초 → 2차(desired 2) 완료 | 16:33:53 → 16:39:53 → 16:40:27 | |
-| 부하 종료 → 태스크 2개 복귀 | 16:15:56 → 16:40:27 | 24분 |
-
-- 한 번에 2개에서 4개로 늘었습니다. 목표 추적이 `2 × 95 / 60 = 3.2`를 올림해 4로 정했습니다.
-- 늘림 결정까지 약 7분이 걸렸습니다. 설계할 때 예상한 3~4분보다 길었습니다.
-- 줄임은 1개씩 두 번, 사이에 줄임 쿨다운 300초가 들어갔습니다.
-- CPU: 태스크 2개일 때 93~98%(16:05~16:10), 4개가 된 뒤 62~65%(16:12~16:14)였습니다.
-- ALB 요청: 포화 중 분당 약 8,000~8,400건(약 135 RPS), 4개가 된 뒤 분당 12,000건(200 RPS)이었습니다.
-
-**응답 시간(구간별)**: 경계는 늘림 결정(07:10:51Z), 4개 healthy(07:12:11Z), 밀린 요청 처리 끝(07:13:30Z)입니다. 클라이언트 값은 k6 원시 결과를 [`load/p95.mjs`](load/p95.mjs)로 나눠 냈고, ALB 값은 해당 분 구간의 CloudWatch 백분위입니다.
-
-| 구간(UTC) | 요청 | 클라이언트 p50 | 클라이언트 p95 | 클라이언트 p99 | ALB p50 | ALB p95 |
-|---|---|---|---|---|---|---|
-| 늘어나기 전 07:03:58~07:10:50 | 53,705 | 1,739 ms | 9,427 ms | 12,139 ms | 1.03초(07:04~07:10) | 7.66초 |
-| 새 태스크 기동 중 07:10:51~07:12:10 | 10,622 | 1,844 ms | 10,228 ms | 13,297 ms | 0.04초(07:11~07:13) | 8.87초 |
-| 늘어난 직후 밀린 요청 07:12:11~07:13:29 | 13,342 | 36 ms | 11,511 ms | 16,879 ms | (위와 같은 분 구간) | |
-| 늘어난 뒤 안정 07:13:30~07:15:56 | 23,436 | 31 ms | 52 ms | 237 ms | 18 ms(07:13~07:16) | 31 ms |
-
-- 늘어나기 전 클라이언트 p95는 9.4초였고, 늘어난 뒤 안정 구간에서는 52 ms로 내려왔습니다. ALB(서버) p95도 7.66초에서 31 ms가 됐습니다.
-- 4개가 된 직후 약 80초 동안은 p50이 36 ms로 정상인데 p95·p99가 11~17초입니다. 포화 때 쌓인 요청이 이 구간에 끝났기 때문입니다.
-- ALB 지표는 1분 단위라 클라이언트 구간 경계와 정확히 맞지 않습니다. ALB 칸에는 실제로 조회한 분 구간을 적었습니다.
-
-**본 시험 전체(k6 요약)**: 요청 101,105건(초당 140.4건), 실패 1건, 5xx 0건, p50 41 ms / p95 9.29초 / p99 12.6초 / 최대 30.3초.
-- p95 1초 임계를 넘어 k6는 실패 코드로 끝났습니다. 포화를 일부러 만든 시험이라 측정은 그대로 썼습니다.
-- `dropped_iterations` 30,894건: 포화 중 응답이 느려져 가상 사용자 500개가 모두 대기 상태가 됐고, 그동안 보내지 못한 요청입니다. 그래서 실제 평균은 200이 아니라 초당 140.4건이었습니다.
-
-**알람**: 부하 중 ECS CPU가 6분 동안 93~98%였는데 ECS CPU 80%·5분 알람(`3tier-prod-ecs-cpu-high`)은 울리지 않았습니다. 원인은 트러블슈팅 기록에서 따로 다룹니다.
-
-### 장애 재현 (E08)
-
-환경이 하나라 운영(prod)에서 의도적으로 실험했습니다. 장애마다 재현 방법·타임라인·원인·재발 방지를 `docs/troubleshooting/`에 적었습니다.
-
-| 장애 | 날짜 | 사용자 영향 | 복구 | 울린 알람 | 기록 |
-|---|---|---|---|---|---|
-| 태스크 강제 종료 (1개 / 2개 동시) | 2026-11-02 | 1개: 0초 (1,248회 중 실패 0) / 2개: 46.5초 (1,635회 중 실패 140) | 1개 76초 / 2개 89초 (스케줄러가 새 태스크 기동) | 없음 (1분 남짓 중단은 탐지 공백) | [01-task-killed.md](docs/troubleshooting/01-task-killed.md) |
-| 잘못된 이미지 배포 | 2026-10-28 | 측정한 liveness 요청 217회 중 실패 0건 (게시판 요청 전체는 측정 안 함) | 서킷 브레이커 자동 롤백 5분 19초 (실패 판정 4분 5초 + 이전 리비전 복귀 1분 14초) | 없음 | [02-bad-image-rollback.md](docs/troubleshooting/02-bad-image-rollback.md) |
-| DB 연결 실패 (FIS로 DB 서브넷 10분 차단) | 2026-11-02 | 게시판·health 약 10분 실패(500·503, 30초 대기 뒤), liveness 666회 중 실패 0건 | 차단 해제와 동시에 재연결(1초 미만), 태스크 교체 0건 | 5xx 비율 알람, 차단 6분 11초 뒤 | [03-db-connection-failure.md](docs/troubleshooting/03-db-connection-failure.md) |
-
-### ECS on EC2 전환 전후 비교 (E10, 2026-11-02)
-
-컴퓨트를 Fargate(v1)에서 ECS on EC2(v2: t3.small 2~4대, 인스턴스당 태스크 1개, 용량 공급자 관리형 스케일링·종료 보호·드레이닝)로 바꾼 뒤, 같은 방법으로 다시 재서 비교했습니다. 전환 이유는 비용이 아니라 호스트 수준 관측(E11 에이전트)과 태스크·인스턴스 2단계 스케일링 측정입니다. 응답 시간 비교는 측정 PC가 달라 k6가 아니라 ALB `TargetResponseTime`(서버 측)으로 했습니다.
-
-| 항목 | v1 Fargate | v2 ECS on EC2 | 비고 |
-|---|---|---|---|
-| main apply (destroy 상태에서) | 8분 31초 (73개) | 8분 34초 (82개) | 인스턴스 기동·클러스터 등록 94초가 들어가도 전체는 같음 |
-| ECS 롤링 배포 (새 배포 → COMPLETED, 태스크 2개) | 3분 21초 ~ 3분 22초 | 4분 50초 | EC2는 새 태스크 자리가 없어 인스턴스 2→4 증설(약 2분) 뒤 기동. 워크플로 전체는 캐시 적중 기준 7분 18초 / 5분 28초. 배포 뒤 빈 인스턴스는 16분 43초 뒤 자동 축소 |
-| 스케일 아웃 2→4 (200 RPS 부하 시작 → 4개 healthy) | 8분 0초 | 8분 48초 | EC2는 태스크 4개 결정(5분 52초) → ASG 2→4(36초) → 인스턴스 등록(52초) → 태스크 기동. 2단계 스케일링 실측 |
-| 스케일 인 (부하 종료 → 태스크 2개) | 24분 | 22분 52초 | 목표 추적 축소 알람 15분 + 쿨다운 300초 |
-| 스케일 인 (부하 종료 → 인스턴스 2대) | 해당 없음 | 39분 14초 | 용량 공급자 축소 알람 15분, 태스크 있는 인스턴스는 종료 보호 |
-| 2 태스크 과부하 구간 응답 (ALB p95, 분 단위) | 5.1 ~ 6.8초 | 8.2 ~ 9.1초 | 늘어나기 전. 클라이언트(k6) p95는 Fargate 9.4초(E07) / EC2 9.8 ~ 11.0초 |
-| 4 태스크 안정 구간 응답 (ALB p50 / p95) | 18 ms / 30 ms | 39 ms / 114 ms | 늘어난 뒤. Fargate 값은 E08 재측정(01:28~01:29 KST), E07 때는 31 ms. 호스트 CPU 15%·태스크 CPU 70%로 포화는 아님. 원인은 트러블슈팅 기록(Notion)에서 추적 중, #90 |
-| 태스크 1개 강제 종료 (영향 / 복귀) | 0초 / 76초 | 0초 / 85초 | 등록 해제 29초 → 7초. 새 태스크는 옛 태스크 자리를 15~20초 기다림 |
-| 태스크 2개 동시 종료 (영향 / 복귀) | 46.5초 / 89초 | 68.8초 / 81초 | 등록 해제가 빨라져 빈 구간이 바로 시작, 자리 대기 11~13초 추가 |
-| 컨테이너 인스턴스 1대 ASG 종료 (영향 / 교체) | 해당 없음 | 0초 (ALB 5xx·연결 오류 0 기준) / 4분 30초 | 관리형 드레이닝이 수명주기 훅을 받아 우아하게 교체. probe는 요청 46초 뒤부터 기록했고 타임아웃 21건은 원인 미확정. [04-instance-terminated.md](docs/troubleshooting/04-instance-terminated.md) |
-| CPU 알람 ALARM 도달 (과부하 시작 기준) | 5분 15초 | 5분 49초 | missing 처리·3/5 설정, 목표 7분 이내 통과 |
-| main destroy | 5분 57초 | 1차 실패(22분 22초) + 2차 5분 30초 | NAT가 태스크 정지 중에 지워져 에이전트가 끊기고 서비스가 DRAINING에 고착. 재발 방지는 후속 PR |
-| 시간당 컴퓨트 비용 (태스크 2개 기준, 서울 온디맨드) | 약 0.057 USD | 약 0.06 USD (t3.small × 2 + EBS) | 실제 청구액 비교는 #90·E09 |
-
-- 응답 시간은 늘어나기 전·후 모두 EC2가 느렸습니다(과부하 구간 ALB p95 5.1~6.8초 → 8.2~9.1초, 안정 구간 30 ms → 114 ms). 호스트와 태스크 모두 포화가 아니어서 인스턴스 유형(버스트형, 물리 코어 1개)과 컨테이너 CPU 설정을 #90에서 따져 봅니다.
-- 2단계 스케일링의 추가 비용은 48초였습니다. 용량 공급자가 자리를 못 잡은 태스크를 36초 만에 감지해 증설을 시작했고 인스턴스 등록이 52초 걸렸습니다.
-- EC2 전환으로 새로 생긴 책임은 두 가지였습니다. 에이전트의 네트워크 경로(NAT가 먼저 지워지면 태스크 정지 보고가 막힘)와 인스턴스 수명(드레이닝·종료 보호 설정이 없으면 태스크가 있는 인스턴스가 꺼짐). 둘 다 이번 측정에서 실제로 드러났습니다.
-- 근거: apply [run 41378930434](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41378930434), 배포 [run 41379830810](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41379830810), destroy [run 41392316211](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41392316211)·[run 41395572307](https://github.com/DDongHyun00/3-tier-terraform-ecs/actions/runs/41395572307). k6 분당 집계·ALB 분당 비교·probe·상태 CSV는 로컬 `local/captures/E10/`에 있고 Notion 실측 기록에 줄로 정리했습니다.
-
-## 진행 상태
-
-- [x] 게시판 앱 준비
-- [x] 클라우드 대응 리팩토링 (PostgreSQL 전환, Flyway, DB 세션 저장, 헬스체크, S3 파일 저장, 컨테이너 이미지)
-- [x] Terraform 인프라 구축 (bootstrap, 네트워크·데이터·컴퓨트·HTTPS)
-- [x] CI/CD 파이프라인 (OIDC, 이미지 빌드, 롤링 배포, Terraform plan·apply·destroy)
-- [x] 모니터링과 오토스케일링 (CloudWatch 알람 → Slack, 목표 추적 스케일링, k6 부하 시험)
-- [x] 장애 재현과 기록 (태스크 종료, 잘못된 이미지 롤백, DB 연결 실패, 인스턴스 종료 / RDS 장애 조치는 예정)
-- [x] ECS on EC2 전환과 전후 비교 측정 (비용 비교 문서는 예정)
-- [ ] 통합 모니터링 (관제 VPC, Prometheus·Grafana, 스테이징 환경)
-- [ ] 중앙 로그 (Elasticsearch·Kibana, Fluent Bit)
-- [ ] 비용 정리와 포트폴리오 마무리
+설계 결정과 장애 실험·측정은 직접 수행하고, AI는 코드 리뷰·검증과 실무 표준 확인에 활용했습니다.

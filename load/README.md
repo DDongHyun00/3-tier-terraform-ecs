@@ -1,8 +1,8 @@
 # 부하 테스트 (k6)
 
-ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스크 2~4개)이 부하에 따라 늘고 주는지 확인하려고 만든 스크립트다(#40). 결과 수치는 루트 README `## 측정`에 적는다.
+ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스크 2~4개)이 부하에 따라 늘고 주는지 확인하려고 만든 스크립트다(#40). 결과 수치는 [측정 상세](../docs/measurements.md#오토스케일링부하-시험-e07-2026-10-29)에 적었다.
 
-2026-10-29 실측: 보정 포화점 약 125 RPS, 본 시험 200 RPS. 자세한 값은 [루트 README 측정 절](../README.md#오토스케일링부하-시험-e07-2026-10-29).
+2026-10-29 실측: 보정 포화점 약 125 RPS, 본 시험 200 RPS. 자세한 값은 [docs/measurements.md](../docs/measurements.md#오토스케일링부하-시험-e07-2026-10-29).
 
 ## 시나리오
 
@@ -15,13 +15,13 @@ ECS 서비스 오토스케일링(서비스 평균 CPU 60% 목표 추적, 태스�
 
 k6 설치: `winget install GrafanaLabs.k6`
 
-1. 보정(약 4분): 30 → 60 → 120 → 200 RPS를 1분씩 준다. 대시보드 ECS CPU에서 태스크 2개 평균이 90%를 넘는 RPS를 찾는다.
+1. 보정(약 4분): 30 → 60 → 120 → 200 RPS를 1분씩 준다. ECS 서비스 CPU(CloudWatch `CPUUtilization` 또는 Grafana 대시보드의 앱 CPU)에서 태스크 2개 평균이 90%를 넘는 RPS를 찾는다.
 
         k6 run -e PROFILE=calibrate load/board.js
 
 2. 본 시험(12분): 보정에서 찾은 RPS로 오르막 1분, 유지 10분, 내리막 1분. 전체 요약(`--summary-export`)과 함께 요청마다 시각이 찍힌 원시 결과(`--out csv`)를 남긴다. 구간별 p95는 원시 결과로 다시 집계한다.
 
-        k6 run -e PROFILE=main -e RATE=<RPS> --summary-export local/captures/E7/k6-summary.json --out csv=local/captures/E7/k6-main.csv load/board.js
+        k6 run -e PROFILE=main -e RATE=<RPS> --summary-export results/k6-summary.json --out csv=results/k6-main.csv load/board.js
 
    - 목표 추적은 `현재 태스크 수 × CPU / 60`으로 원하는 수를 계산한다. 2개에서 평균 90~100%면 3.0~3.3 → 4개까지 늘어난다.
    - 늘림은 1분 지표 3개 연속 60% 초과(부하 시작 후 약 3~4분), 줄임은 15개 연속 54% 미만(부하 종료 후 약 15~20분)이다. 5분으로는 새 태스크가 부하를 나누기 전에 끝나서 유지 구간을 10분으로 늘렸다.
@@ -44,13 +44,13 @@ k6 설치: `winget install GrafanaLabs.k6`
 
 - 클라이언트(k6): 원시 결과를 경계로 나눠 집계한다. 화면(목록·상세)별로도 나온다.
 
-        node load/p95.mjs local/captures/E7/k6-main.csv <경계1 ISO 시각> <경계2 ISO 시각>
+        node load/p95.mjs results/k6-main.csv <경계1 ISO 시각> <경계2 ISO 시각>
 
   2026-10-29 시험에서는 늘림 결정, 4개 healthy, 밀린 요청 처리 끝을 경계로 네 구간으로 나눴다.
 
-        node load/p95.mjs local/captures/E7/k6-main.csv 2026-10-29T07:10:51Z 2026-10-29T07:12:11Z 2026-10-29T07:13:30Z
+        node load/p95.mjs results/k6-main.csv 2026-10-29T07:10:51Z 2026-10-29T07:12:11Z 2026-10-29T07:13:30Z
 
-- 서버(ALB): 구간마다 한 번씩, 구간 길이를 `--period`로 주면 그 구간 전체의 p95 하나가 나온다. ALB 지표는 1분 단위라 시작·끝을 분 경계로 맞추고 `--period`는 60의 배수로 준다. `<ALB 차원>`은 대시보드 위젯의 LoadBalancer 값(`app/3tier-prod-alb/...`)이다.
+- 서버(ALB): 구간마다 한 번씩, 구간 길이를 `--period`로 주면 그 구간 전체의 p95 하나가 나온다. ALB 지표는 1분 단위라 시작·끝을 분 경계로 맞추고 `--period`는 60의 배수로 준다. `<ALB 차원>`은 LoadBalancer 값(`app/3tier-prod-alb/...`)으로, `aws elbv2 describe-load-balancers --names 3tier-prod-alb --profile 3tier`가 돌려주는 ARN의 `app/`부터 끝까지다.
 
         aws cloudwatch get-metric-statistics --profile 3tier --namespace AWS/ApplicationELB --metric-name TargetResponseTime --dimensions Name=LoadBalancer,Value=<ALB 차원> --start-time <구간 시작> --end-time <구간 끝> --period <구간 초> --extended-statistics p95
 

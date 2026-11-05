@@ -35,7 +35,7 @@ data "aws_iam_policy_document" "github_trust" {
 
     # 이 레포의 main 브랜치(apply·배포)와 PR(plan)에서 실행된 워크플로만.
     # 2026-07-15 이후 만든 레포는 sub에 불변 ID가 붙는다: repo:<owner>@<owner_id>/<name>@<repo_id>:...
-    # 이름만 쓰면 매치되지 않아 AccessDenied가 난다 (TS-12). ID를 쓰면 레포 이름이 바뀌거나 재사용돼도 안전하다.
+    # 이름만 쓰면 매치되지 않아 AccessDenied가 난다. ID를 쓰면 레포 이름이 바뀌거나 재사용돼도 안전하다.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"

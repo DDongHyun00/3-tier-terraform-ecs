@@ -1,4 +1,4 @@
-# compute 모듈: ECS Fargate + ALB + ACM + Route 53 (#27). 설계: docs/architecture.md 6.1절, 7.2절.
+# compute 모듈: ECS on EC2(온디맨드·Spot 용량 공급자) + ALB + ACM + Route 53 (#27, #87, #46). 설계: docs/architecture.md 6.1절, 7.2절.
 
 variable "name_prefix" {
   description = "리소스 이름 접두사. 예: 3tier-prod"
@@ -48,13 +48,13 @@ variable "app_port" {
 }
 
 variable "task_cpu" {
-  description = "태스크 CPU 단위. 512 = 0.5 vCPU. 256(0.25)은 기동 120초, 첫 응답 수 초라 올렸다 (DEC, E05)"
+  description = "태스크 CPU 단위. 512 = 0.5 vCPU. 256(0.25)은 Fargate 시절 기동 120초, 첫 응답 수 초라 올렸다(DEC-46, 올린 뒤 기동 약 23초)"
   type        = number
   default     = 512
 }
 
 variable "task_memory" {
-  description = "태스크 메모리 MB. 0.5 vCPU에 허용되는 값은 1024~4096"
+  description = "태스크 메모리 MB. 1024~4096은 Fargate 시절 0.5 vCPU에 허용되던 범위다. EC2(t3.small, 2 GiB)에는 1 GB 태스크가 인스턴스당 1개 들어간다"
   type        = number
   default     = 1024
 }
@@ -78,7 +78,7 @@ variable "health_check_path" {
 }
 
 variable "health_check_grace_period" {
-  description = "서비스 시작 후 ALB 헬스체크 실패를 무시하는 초. 앱 기동 시간(0.25 vCPU 약 120초)의 2배"
+  description = "서비스 시작 후 ALB 헬스체크 실패를 무시하는 초. 0.25 vCPU(Fargate 시절) 기동 약 120초의 2배로 잡은 값. 0.5 vCPU로 올린 뒤 기동은 약 23초라 여유가 크다(DEC-46)"
   type        = number
   default     = 240
 }
@@ -141,7 +141,7 @@ variable "asg_min_size" {
 }
 
 variable "asg_max_size" {
-  description = "ASG 최대 인스턴스 수. 서비스 태스크 상한(4)의 2배. 인스턴스당 태스크 1개라 롤링 배포(최소 100%·최대 200%)가 태스크 4개 상태에서도 새 태스크를 놓을 자리가 있어야 한다. 상한일 뿐 평시 대수는 용량 공급자가 정한다"
+  description = "ASG 최대 인스턴스 수. 서비스 태스크 상한(4)의 2배. 인스턴스당 태스크 1개라 롤링 배포(최소 50%·최대 200%)가 태스크 4개 상태에서도 새 태스크를 놓을 자리가 있어야 한다. 상한일 뿐 평시 대수는 용량 공급자가 정한다"
   type        = number
   default     = 8
 }

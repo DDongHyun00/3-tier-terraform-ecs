@@ -41,6 +41,7 @@ DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않�
 | `STORAGE_TYPE` | `local` (첨부파일을 디스크에 저장. 운영은 `s3`) |
 | `UPLOAD_DIR` | `uploads` (`local`일 때 저장 폴더) |
 | `S3_BUCKET` | 없음 (`s3`일 때 필수. 자격 증명은 ECS 태스크 역할, 리전은 `AWS_REGION`) |
+| `ADMIN_PASSWORD` | 비움 (로컬은 비워 둠. 운영·스테이징은 Secrets Manager DB 비밀의 `admin_password`. 값이 있으면 기동 때 admin 비밀번호를 이 값으로 바꿈) |
 
 테스트(`./gradlew build`)는 Testcontainers로 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다.
 
@@ -56,6 +57,8 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 헬스체크는 `/actuator/health`(DB 포함)와 `/actuator/health/liveness`(앱 프로세스만)를 로그인 없이 제공합니다. 그 외 Actuator 엔드포인트는 노출하지 않습니다.
 
 ## 테스트 계정
+
+시드 데이터(`V2__seed.sql`)는 Flyway가 모든 환경에서 적용하므로 아래 계정은 로컬뿐 아니라 운영·스테이징에도 만들어집니다. 일반 사용자 user1~4(비밀번호 1111, 권한 USER)는 배포된 데모 사이트를 둘러보기 위한 계정으로 의도해서 남겨 두었습니다. 관리자 admin의 비밀번호는 환경 변수 `ADMIN_PASSWORD`가 있으면 앱이 기동할 때 그 값으로 바뀝니다(`AdminPasswordInitializer`). 운영·스테이징은 Secrets Manager DB 비밀의 `admin_password` 키를 주입하므로 1111로는 관리자로 로그인할 수 없고, 로컬처럼 값이 비어 있으면 시드 비밀번호 1111이 그대로입니다.
 
 | 아이디 | 비밀번호 | 닉네임 | 권한 |
 |---|---|---|---|
@@ -100,7 +103,7 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 
 > 스키마는 Flyway 마이그레이션(`V1__init.sql`)으로 관리하며, 아래 표는 그 기준입니다.
 > User, Posts, Comment, PostLike, Notification은 `BaseTimeEntity`를 상속해 `created_at`, `updated_at` 컬럼을 포함합니다.
-> 
+
 #### User (회원)
 | 컬럼명 | 타입 | 제약조건 | 설명 |
 |--------|------|----------|------|
@@ -176,8 +179,8 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 ## 설계 포인트
 - 정규화: 중복 최소화 및 무결성 유지
 - 관계 무결성: FK 제약과 UNIQUE 인덱스로 데이터 일관성 보장
-- 확장성: Notification 타입 컬럼을 두어 시스템 알림, 댓글 알림, 좋아요 알림 확장 가능
+- 확장성: 알림을 Notification 테이블로 분리해 다른 기능과 따로 늘릴 수 있음(알림 종류 컬럼은 두지 않음)
 - 보안: User 비밀번호는 BCrypt 해시 처리
-- 가독성: created_at / updated_at 컬럼을 모든 테이블에 포함해 변경 이력 추적 가능
+- 변경 추적: `BaseTimeEntity`를 상속한 5개 테이블(User, Posts, Comment, PostLike, Notification)에 created_at / updated_at 컬럼을 두어 생성·수정 시각 추적 가능
 - 사용자 경험: 마이페이지, 알림, 파일 첨부 기능 제공
 - 운영 편의성: 관리자 대시보드 제공

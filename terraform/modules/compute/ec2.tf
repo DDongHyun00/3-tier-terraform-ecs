@@ -149,7 +149,7 @@ resource "aws_ecs_capacity_provider" "ec2" {
       target_capacity           = 100
       minimum_scaling_step_size = 1
       maximum_scaling_step_size = 2
-      instance_warmup_period    = 300 # 기본값, 변경 가능. #89에서 실측 기동 시간을 보고 다듬는다
+      instance_warmup_period    = 300 # 기본값을 그대로 둔다. #89 인스턴스 스케일링 실측은 docs/measurements.md
     }
   }
 }

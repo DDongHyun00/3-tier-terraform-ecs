@@ -1,7 +1,7 @@
-# 배포 역할 3tier-github-deploy의 권한 (#35). AdministratorAccess를 떼고 서비스별 정책 5개로 바꿨다.
+# 배포 역할 3tier-github-deploy의 권한 (#35). AdministratorAccess를 떼고 서비스별 정책 7개로 나눴다(아래 deploy_policy_docs, 스테이징 역할도 같은 7개).
 # 근거: CloudTrail 이벤트 기록(역할 세션의 plan 호출 + 같은 코드를 로컬에서 apply·destroy한 쓰기 호출)
 #       + 기록에 안 남는 작업(S3 객체, ECR 레이어, PassRole, 태그 동시 생성)은 terraform/main과 워크플로에서 보충.
-#       + E07에서 만들 오토스케일링·알람·대시보드·SNS 권한은 미리 넣었다.
+#       + E07 오토스케일링·알람·대시보드·SNS 권한은 이때 미리 넣었고, ECS on EC2(#87·#88)·E11 네트워크(#111) 권한은 그 작업 때 더했다.
 # main의 apply와 destroy가 모두 되어야 한다. 리소스는 이름·ARN(리전·계정·리소스 종류)으로 좁히고,
 # 이름으로 못 좁히는 EC2 삭제는 태그(Project)로 좁혔다.
 #
@@ -831,7 +831,7 @@ data "aws_iam_policy_document" "deploy_data" {
   }
 }
 
-# ---------- 5. 관측성 (E07: Application Auto Scaling, CloudWatch 알람·대시보드, SNS) ----------
+# ---------- 5. 관측성 (E07: Application Auto Scaling, CloudWatch 알람·대시보드, SNS. 대시보드는 #95에서 지웠고 권한만 남아 있다) ----------
 data "aws_iam_policy_document" "deploy_observability" {
   for_each = local.deploy_envs
 
@@ -930,7 +930,6 @@ data "aws_iam_policy_document" "deploy_observability" {
   }
 }
 
-# ---------- 정책 생성과 부착 ----------
 # ---------- 6. E11 네트워크·관제 (#111) ----------
 # 관제 VPC·피어링(#91), 리전 NAT(DEC-41), S3 게이트웨이 엔드포인트, 관제 서버 단독 인스턴스(#92),
 # 앱 지표 탐색 Cloud Map·지표 경로 차단 리스너 규칙(#94).
@@ -1107,6 +1106,7 @@ data "aws_iam_policy_document" "deploy_network_e11" {
   }
 }
 
+# ---------- 정책 생성과 부착 ----------
 locals {
   deploy_policy_docs = {
     state-ecr     = data.aws_iam_policy_document.deploy_state_ecr

@@ -1,4 +1,4 @@
-# data 모듈: RDS PostgreSQL + Secrets Manager (#25). S3·CloudFront는 #26에서 추가.
+# data 모듈: RDS PostgreSQL + Secrets Manager (#25), S3·CloudFront (#26).
 
 variable "name_prefix" {
   description = "리소스 이름 접두사. 예: 3tier-prod"

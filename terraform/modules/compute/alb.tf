@@ -12,7 +12,7 @@ resource "aws_lb" "this" {
   enable_deletion_protection = false
 }
 
-# Fargate(awsvpc)는 태스크마다 ENI가 있어서 타깃 유형이 instance가 아니라 ip다.
+# awsvpc(EC2) 네트워크 모드는 태스크마다 ENI가 있어서 타깃 유형이 instance가 아니라 ip다.
 resource "aws_lb_target_group" "app" {
   name        = "${var.name_prefix}-tg"
   vpc_id      = var.vpc_id

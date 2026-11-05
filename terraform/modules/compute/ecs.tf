@@ -3,7 +3,7 @@
 resource "aws_ecs_cluster" "this" {
   name = "${var.name_prefix}-cluster"
 
-  # Container Insights: 클러스터·서비스 단위 CPU/메모리 지표. E07 대시보드가 쓴다
+  # Container Insights: 클러스터·서비스 단위 CPU/메모리 지표. 이를 쓰던 CloudWatch 대시보드는 #95에서 지웠다
   setting {
     name  = "containerInsights"
     value = "enabled"
@@ -86,7 +86,7 @@ resource "aws_ecs_service" "app" {
     }
   }
 
-  # 떠 있는 서비스의 용량 공급자 전략을 바꿀 때 provider가 요구한다(Fargate → EC2 전환). ignore_changes로 평소 apply는 서비스를 건드리지 않는다
+  # 떠 있는 서비스의 용량 공급자 전략을 바꿀 때 provider가 요구한다(Fargate → EC2 전환 때 넣었고, 지금은 enable_spot을 켜고 끌 때). ignore_changes로 평소 apply는 서비스를 건드리지 않는다
   force_new_deployment = true
 
   # AZ에 고르게 나눈 뒤, 각 AZ 안에서는 메모리 기준으로 채운다(DEC-50 D4)
@@ -113,8 +113,8 @@ resource "aws_ecs_service" "app" {
     rollback = true
   }
 
-  # 기동 직후 헬스체크 실패를 무시하는 시간. 0.25 vCPU에서 실측 기동 120초(로컬 11초).
-  # 60초로 뒀다가 태스크가 기동 중에 교체되는 루프가 생겼다 (TS-11)
+  # 기동 직후 헬스체크 실패를 무시하는 시간(240초). Fargate 0.25 vCPU 때 실측 기동 120초(로컬 11초)에 맞췄고, 0.5 vCPU로 올린 뒤 기동은 약 23초다(DEC-46).
+  # 60초로 뒀다가 태스크가 기동 중에 교체되는 루프가 생겼다
   health_check_grace_period_seconds = var.health_check_grace_period
 
   network_configuration {
@@ -134,7 +134,7 @@ resource "aws_ecs_service" "app" {
     registry_arn = aws_service_discovery_service.app.arn
   }
 
-  # 배포는 GitHub Actions가 태스크 정의 새 리비전을 등록하고 서비스를 갱신한다(E06, DEC).
+  # 배포는 GitHub Actions가 태스크 정의 새 리비전을 등록하고 서비스를 갱신한다(E06).
   # Terraform이 서비스의 task_definition을 자기 리비전으로 되돌리지 않도록 무시한다.
   # Terraform으로 태스크 정의(CPU·메모리·환경 변수)를 바꾸면 다음 배포 때 그 리비전을 기반으로 반영된다.
   # desired_count는 오토스케일링(#39)이 2~4로 바꾼다. 무시하지 않으면 다음 apply가 늘어난 태스크를 2로 되돌린다.

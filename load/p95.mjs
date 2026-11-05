@@ -2,7 +2,7 @@
 // k6 요약(--summary-export)은 시험 전체 하나만 주므로, 스케일 아웃 전·후 p95는 원시 결과에서 다시 집계한다.
 //
 //   node load/p95.mjs <k6 결과.csv> [경계 시각 ...]
-//   예) node load/p95.mjs local/captures/E7/k6-main.csv 2026-10-30T14:05:10+09:00 2026-10-30T14:07:40+09:00
+//   예) node load/p95.mjs results/k6-main.csv 2026-10-30T14:05:10+09:00 2026-10-30T14:07:40+09:00
 //       → 시작~경계1, 경계1~경계2, 경계2~끝 세 구간. 경계는 스케일링 활동 시각, 새 타깃 healthy 시각 등
 //
 // 집계 대상: http_req_duration(ms). 실패 요청도 포함한다(k6 요약의 http_req_duration과 같은 기준).
