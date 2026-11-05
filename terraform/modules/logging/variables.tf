@@ -19,6 +19,12 @@ variable "subnet_id" {
   type        = string
 }
 
+variable "private_ip_hostnum" {
+  description = "서브넷 안에서 ELK 서버에 고정할 호스트 번호(#144). 앞 4개와 마지막은 AWS 예약이라 10을 쓴다"
+  type        = number
+  default     = 10
+}
+
 variable "peering_dependency_ids" {
   description = "관제 ↔ 운영 피어링 경로 ID. 운영 SG를 참조하는 규칙을 피어링 active 뒤에 만들려고 쓴다"
   type        = list(string)
