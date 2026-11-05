@@ -34,8 +34,11 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 잡 출력에는 태그만 넘긴다. 계정 ID가 든 이미지 주소는 mask-aws-account-id 때문에 비밀로 보고
+    # "Skip output 'image' since it may contain secret"으로 빠진다(#102 첫 실행 run 41945053452에서 실패).
+    # 받는 잡이 자기 자격 증명의 계정으로 주소를 다시 조립한다. 태그가 같으니 같은 이미지다
     outputs:
-      image: ${{ steps.tag.outputs.image }}
+      tag: ${{ steps.tag.outputs.tag }}
       t_built: ${{ steps.done.outputs.t }}
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +62,7 @@ jobs:
         run: |
           IMAGE="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${GITHUB_SHA::7}"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -111,6 +114,8 @@ jobs:
         if: steps.up.outputs.up == 'true'
         run: |
           echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "IMAGE=${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${{ needs.build.outputs.tag }}" >> "$GITHUB_ENV"
           aws ecs describe-task-definition --task-definition "$TASK_FAMILY" --query taskDefinition > task-definition.json
 
       - name: render new task definition
@@ -120,7 +125,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ needs.build.outputs.image }}
+          image: ${{ env.IMAGE }}
 
       - name: deploy to staging
         if: steps.up.outputs.up == 'true'
@@ -170,7 +175,10 @@ jobs:
 
       # 현재 서비스가 쓰는 태스크 정의(최신 리비전)를 내려받는다. CPU·메모리·환경 변수는 그대로, 이미지만 바뀐다
       - name: download current task definition
-        run: aws ecs describe-task-definition --task-definition "$TASK_FAMILY" --query taskDefinition > task-definition.json
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "IMAGE=${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${{ needs.build.outputs.tag }}" >> "$GITHUB_ENV"
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" --query taskDefinition > task-definition.json
 
       - name: render new task definition
         id: render
@@ -178,7 +186,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ needs.build.outputs.image }}
+          image: ${{ env.IMAGE }}
 
       # 새 리비전 등록 → 서비스 갱신 → 롤링(100/200) 완료까지 대기. 서킷 브레이커가 롤백하면 여기서 실패한다
       # 폴링 간격 상한 15초(#36: 상한이 없으면 SDK 기본 600초까지 늘어 롤백을 8분 33초 늦게 알았다)
