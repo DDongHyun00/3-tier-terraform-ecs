@@ -42,7 +42,7 @@ public class GlobalExceptionHandler {
         mv.addObject("message", message);
         return mv;
     }
-//    404: 정적 리소스 및 매핑 없음 (Spring Boot 3.x)
+//    404: 정적 리소스 및 매핑 없음 (Spring Boot 4)
     @ExceptionHandler(NoResourceFoundException.class)
     public Object handle404(NoResourceFoundException ex, HttpServletRequest request) {
         log.warn("404 Not Found: {}", ex.getResourcePath());
@@ -58,6 +58,15 @@ public class GlobalExceptionHandler {
         String msg = ex.getMessage();
         return isAjax(request) ? json(HttpStatus.NOT_FOUND, msg)
                 : view("error/404", HttpStatus.NOT_FOUND, msg);
+    }
+
+//    403: 남의 글·댓글을 수정·삭제하려 함. 사용자 요청 오류라 error가 아닌 warn (5xx 알람에 잡히면 안 된다)
+    @ExceptionHandler(ForbiddenException.class)
+    public Object handleForbidden(ForbiddenException ex, HttpServletRequest request) {
+        log.warn("403 Forbidden: {} {}", request.getRequestURI(), ex.getMessage());
+        String msg = ex.getMessage();
+        return isAjax(request) ? json(HttpStatus.FORBIDDEN, msg)
+                : view("error/403", HttpStatus.FORBIDDEN, msg);
     }
 
 //    403: 권한 없음

@@ -7,6 +7,7 @@ import com.example.board.board.dto.PostResponseDto;
 import com.example.board.board.entity.Post;
 import com.example.board.board.service.PostService;
 import com.example.board.comment.service.CommentService;
+import com.example.board.common.exception.ForbiddenException;
 import com.example.board.like.service.PostLikeService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -136,7 +137,7 @@ public class PostController {
                            Model model) {
         Post post = postService.getPost(id); // 조회수 증가 없음
         if (!post.getUser().getUsername().equals(principal.getUsername())) {
-            throw new SecurityException("작성자 본인만 수정할 수 있습니다.");
+            throw new ForbiddenException("작성자 본인만 수정할 수 있습니다.");
         }
 
         PostRequestDto dto = new PostRequestDto();

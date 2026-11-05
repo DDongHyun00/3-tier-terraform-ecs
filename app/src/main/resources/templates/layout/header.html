@@ -46,7 +46,6 @@
           .then((count) => {
             notifCount = count;
             document.getElementById("notifCount").innerText = notifCount;
-            console.log("📊 초기 알림 개수:", count);
           })
           .catch((error) => {
             console.error("알림 개수 조회 실패:", error);
@@ -58,7 +57,6 @@
         eventSource.addEventListener("notification", function (event) {
           notifCount++;
           document.getElementById("notifCount").innerText = notifCount;
-          console.log("📩 알림:", event.data);
           if (document.getElementById("notificationList")) {
             loadNotifications();
           }
