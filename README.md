@@ -47,27 +47,27 @@ Spot 인스턴스는 싸지만 AWS가 2분 예고 후 회수합니다. FIS로 �
 
 ### 2. 배포는 검증된 이미지만, 실패하면 자동으로 되돌린다
 
-<img src="docs/images/04-deploy-approval.jpg" alt="승인 배포" width="100%">
+<img src="docs/images/12-deploy-approval.jpg" alt="승인 배포" width="100%">
 
 한 번 빌드한 이미지를 스테이징에서 검증한 뒤, 운영은 승인을 받아야 배포됩니다.
 
-<img src="docs/images/12-circuit-breaker-rollback.jpg" alt="서킷 브레이커 롤백" width="100%">
+<img src="docs/images/13-rollback-events.jpg" alt="서킷 브레이커 롤백" width="100%">
 
 기동에 실패하는 이미지를 일부러 배포했습니다(아래에서 위로 읽음). 배포 실패 → 이전 버전으로 롤백 → 안정까지 5분 19초였고, 그동안 liveness 응답 217회가 모두 200이었습니다.
 
 ### 3. 인프라 변경도 코드 리뷰를 거친다
 
-<img src="docs/images/13-terraform-plan-comment.jpg" alt="PR의 terraform plan 코멘트" width="60%">
+<img src="docs/images/14-terraform-plan-comment.jpg" alt="PR의 terraform plan 코멘트" width="60%">
 
 `terraform/**`를 바꾸는 PR에는 plan 결과가 코멘트로 달리고(계정 ID는 가림), 머지되면 운영에 apply됩니다. 액세스 키 없이 OIDC로 인증합니다.
 
 ### 4. 문제를 먼저 알고, 로그로 원인까지 찾는다
 
-<img src="docs/images/07-slack-alarm.jpg" alt="Slack 알림" width="60%">
+<img src="docs/images/15-slack-alarm.jpg" alt="Slack 알림" width="60%">
 
 5xx 비율이 기준을 넘으면 Slack으로 알림이 오고, 해소되면 다시 알려 줍니다.
 
-<img src="docs/images/08-kibana-trace.jpg" alt="Kibana 로그 추적" width="100%">
+<img src="docs/images/16-kibana-trace.jpg" alt="Kibana 로그 추적" width="100%">
 
 요청마다 ALB 추적 ID를 로그에 남겨, 같은 ID로 응답 로그(INFO)와 원인 로그(WARN)를 이어 봅니다.
 
