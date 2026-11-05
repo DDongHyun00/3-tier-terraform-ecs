@@ -347,6 +347,10 @@ CloudWatch Logs·Loki와의 비교는 [logging.md](logging.md) 3절에 적었다
 
 Well-Architected 비용 원칙의 COST09(비운영 시간에 끄기)는 관측 토글로, COST07(중단 가능한 워크로드에 Spot)은 Spot 용량 공급자로 대응한다. 태스크가 두 AZ에 하나씩이고 온디맨드 1개가 항상 남으므로, Spot이 전부 회수돼도 서비스는 온디맨드 태스크로 이어진다.
 
+최종 apply 뒤 ECS 콘솔. 용량 공급자 2개(`3tier-prod-ec2`, `3tier-prod-spot`)와 컨테이너 인스턴스 3대(2a 온디맨드 1, 2c Spot 2)다.
+
+![ECS 용량 공급자](images/02-ecs-capacity-providers.jpg)
+
 ### 시간당 요금 (컴퓨트만)
 
 Spot 단가는 `aws ec2 describe-spot-price-history`(Linux/UNIX, t3.small, ap-northeast-2c)로 2026-11-01~05 조회한 값 0.0060~0.0064 USD/시간 중 높은 쪽 0.0064를 쓴다. 온디맨드 0.026의 약 25%다. 측정 뒤 떠 있던 Spot 인스턴스 2대는 모두 t3.small이었다(같은 기간 t3a.small 2c는 0.0096). 볼륨 단가와 반올림은 5절과 같다.
