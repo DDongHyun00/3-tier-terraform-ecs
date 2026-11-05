@@ -225,9 +225,12 @@ resource "aws_ecs_capacity_provider" "spot" {
     managed_termination_protection = "ENABLED"
     managed_draining               = "ENABLED"
 
+    # 여유 용량(헤드룸): 목표 사용률을 100보다 낮추면 ASG가 빈 인스턴스를 남겨 둔다(ECS ManagedScaling targetCapacity).
+    # 인스턴스당 태스크 1개라 50이면 Spot 태스크 1개당 인스턴스 2대. 회수 예고(2분) 때 새 인스턴스 부팅을 기다리지 않고 빈 인스턴스로 바로 옮긴다.
+    # 11/05 실측: 100에서는 대신할 태스크 healthy까지 2분 16초(용량 재조정 켬)~3분 53초가 걸려 회수 전에 못 옮겼다(504 13~18건)
     managed_scaling {
       status                    = "ENABLED"
-      target_capacity           = 100
+      target_capacity           = var.spot_target_capacity
       minimum_scaling_step_size = 1
       maximum_scaling_step_size = 2
       instance_warmup_period    = 300

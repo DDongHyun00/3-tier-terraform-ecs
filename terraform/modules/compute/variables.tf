@@ -250,3 +250,9 @@ variable "spot_asg_max_size" {
   type        = number
   default     = 8
 }
+
+variable "spot_target_capacity" {
+  description = "Spot 용량 공급자 목표 사용률(%). 100 미만이면 빈 인스턴스를 여유로 둔다(인스턴스당 태스크 1개라 50 = Spot 태스크당 대기 1대)"
+  type        = number
+  default     = 50
+}
