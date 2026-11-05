@@ -58,8 +58,11 @@ public class RequestLogFilter extends OncePerRequestFilter {
 			long durationMs = (System.nanoTime() - start) / 1_000_000;
 			// 예외가 컨테이너까지 올라가면 응답 코드가 아직 200일 수 있어 500으로 남긴다
 			int status = (failure != null && response.getStatus() < 400) ? 500 : response.getStatus();
+			// User-Agent: 사람·검색 봇·부하 도구(k6)를 가려 보려고 남긴다(ECS user_agent.original). 없으면 빈 값
+			String userAgent = request.getHeader("User-Agent");
 			log.atInfo()
 					.addKeyValue("http.request.method", request.getMethod())
+					.addKeyValue("user_agent.original", userAgent == null ? "" : userAgent)
 					.addKeyValue("url.path", request.getRequestURI())
 					.addKeyValue("http.response.status_code", status)
 					.addKeyValue("event.duration_ms", durationMs)
