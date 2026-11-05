@@ -20,44 +20,7 @@ Spring Boot 서비스를 AWS 3-Tier(ALB → ECS on EC2 → RDS)에 올리고, �
 
 ## 아키텍처
 
-```mermaid
-flowchart LR
-    U[사용자] -->|HTTPS 3tier.link| R53[Route 53]
-    R53 --> ALB
-    U -->|정적 파일| CF[CloudFront] -->|OAC| S3[(S3)]
-
-    subgraph PROD["운영 VPC 10.0.0.0/16"]
-        direction LR
-        subgraph PUB["퍼블릭 (2a, 2c)"]
-            ALB[ALB + ACM]
-        end
-        NAT[리전 NAT<br/>2a·2c EIP]
-        subgraph PRIV["프라이빗 (2a, 2c)"]
-            OD[EC2 온디맨드 2a<br/>태스크 1]
-            SP[EC2 Spot 2c<br/>태스크 1 + 대기 1대]
-        end
-        subgraph DBS["DB 서브넷"]
-            RDS[(RDS PostgreSQL)]
-        end
-    end
-
-    subgraph MON["관제 VPC 10.100.0.0/16"]
-        PG[Prometheus · Grafana]
-        ELK[Elasticsearch · Kibana]
-    end
-
-    subgraph STG["스테이징 VPC 10.1.0.0/16 (필요할 때만)"]
-        SALB[ALB] --> SEC[EC2 온디맨드 1대<br/>태스크 1] --> SRDS[(RDS)]
-    end
-
-    ALB --> OD & SP
-    OD & SP --> RDS
-    OD & SP -.->|FireLens 로그| ELK
-    PG -.->|지표 수집| OD & SP
-    PROD <-->|VPC 피어링| MON
-    PG -->|알림| SNS[SNS] --> SL[Slack]
-    CW[CloudWatch 비상 알람] --> SNS
-```
+<img src="docs/images/00-architecture.png" alt="최종 아키텍처" width="100%">
 
 | 계층 | 구성 | 선택 이유 |
 |---|---|---|
@@ -70,14 +33,43 @@ flowchart LR
 
 설계 근거(CIDR·SG·IAM·태그 규칙, 요청·배포·알람 흐름)는 [docs/architecture.md](docs/architecture.md)에 있습니다.
 
-## 화면
+## 핵심 장면
 
-| | |
-|---|---|
-| ![ECS 용량 공급자](docs/images/02-ecs-capacity-providers.jpg)<br/>온디맨드·Spot 용량 공급자와 AZ별 인스턴스 | ![대상 그룹](docs/images/03-target-group-healthy.jpg)<br/>ALB 대상 그룹 healthy |
-| ![승인 배포](docs/images/04-deploy-approval.jpg)<br/>빌드 → 스테이징 → 운영 승인 대기 | ![부하 중 대시보드](docs/images/05-cloudwatch-dashboard-load.jpg)<br/>200 RPS 부하 중 대시보드(E07 당시 CloudWatch 대시보드, 이후 Grafana로 옮김) |
-| ![스케일 아웃·인](docs/images/06-scale-out-in.jpg)<br/>태스크 2 → 4 → 2 | ![Slack 알람](docs/images/07-slack-alarm.jpg)<br/>5xx 비율 알람과 해소 |
-| ![Kibana](docs/images/08-kibana-trace.jpg)<br/>요청 ID로 로그 추적 | ![Grafana 대시보드](docs/images/09-grafana-dashboard.jpg)<br/>Grafana 운영 개요: 요청 수·p95·p99·컨테이너 CPU·DB 연결·호스트 CPU |
+### 1. 장애를 일부러 일으키고, 고쳐서 실패 0건으로
+
+Spot 인스턴스는 싸지만 AWS가 2분 예고 후 회수합니다. FIS로 회수 예고를 보내면서 설정을 하나씩 바꾸고 다시 쟀습니다. 원인은 마지막에 찾았습니다. 대체 태스크가 healthy가 될 때까지 옛 태스크를 붙잡는 최소 정상 비율 100%였습니다([비용 10절](docs/cost.md#spot-회수-측정-aws-fis), [DEC-67](docs/adr/0067-spot-capacity-mix.md)).
+
+<img src="docs/images/10-spot-interruption-results.png" alt="Spot 회수 1~5회차 요청 실패 건수" width="100%">
+
+<img src="docs/images/11-grafana-spot-interruption.jpg" alt="Spot 회수 중 Grafana" width="100%">
+
+5회차(23:45:37 회수 예고)의 Grafana 화면입니다. 23:47 즈음 옛 Spot 태스크(파란 선)가 끝나고 새 태스크(노란 선)가 시작되는 동안에도 요청은 끊기지 않았습니다. 예고 뒤 요청 712건 중 실패 0건입니다.
+
+### 2. 배포는 검증된 이미지만, 실패하면 자동으로 되돌린다
+
+<img src="docs/images/12-deploy-approval.jpg" alt="승인 배포" width="100%">
+
+한 번 빌드한 이미지를 스테이징에서 검증한 뒤, 운영은 승인을 받아야 배포됩니다.
+
+<img src="docs/images/13-rollback-events.jpg" alt="서킷 브레이커 롤백" width="100%">
+
+기동에 실패하는 이미지를 일부러 배포했습니다(아래에서 위로 읽음). 배포 실패 → 이전 버전으로 롤백 → 안정까지 5분 19초였고, 그동안 liveness 응답 217회가 모두 200이었습니다.
+
+### 3. 인프라 변경도 코드 리뷰를 거친다
+
+<img src="docs/images/14-terraform-plan-comment.jpg" alt="PR의 terraform plan 코멘트" width="60%">
+
+`terraform/**`를 바꾸는 PR에는 plan 결과가 코멘트로 달리고(계정 ID는 가림), 머지되면 운영에 apply됩니다. 액세스 키 없이 OIDC로 인증합니다.
+
+### 4. 문제를 먼저 알고, 로그로 원인까지 찾는다
+
+<img src="docs/images/15-slack-alarm.jpg" alt="Slack 알림" width="60%">
+
+5xx 비율이 기준을 넘으면 Slack으로 알림이 오고, 해소되면 다시 알려 줍니다.
+
+<img src="docs/images/16-kibana-trace.jpg" alt="Kibana 로그 추적" width="100%">
+
+요청마다 ALB 추적 ID를 로그에 남겨, 같은 ID로 응답 로그(INFO)와 원인 로그(WARN)를 이어 봅니다.
 
 ## 장애 실험
 
