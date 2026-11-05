@@ -76,10 +76,13 @@ resource "aws_ecs_service" "app" {
   desired_count   = var.desired_count
 
   # Fargate 대신 EC2 용량 공급자(#87). Fargate 구성은 git 태그 v1-fargate에 남아 있다(DEC-50 D9)
-  capacity_provider_strategy {
-    capacity_provider = aws_ecs_capacity_provider.ec2.name
-    weight            = 1
-    base              = 0
+  dynamic "capacity_provider_strategy" {
+    for_each = local.capacity_provider_strategy
+    content {
+      capacity_provider = capacity_provider_strategy.value.capacity_provider
+      base              = capacity_provider_strategy.value.base
+      weight            = capacity_provider_strategy.value.weight
+    }
   }
 
   # 떠 있는 서비스의 용량 공급자 전략을 바꿀 때 provider가 요구한다(Fargate → EC2 전환). ignore_changes로 평소 apply는 서비스를 건드리지 않는다

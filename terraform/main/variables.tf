@@ -35,3 +35,24 @@ variable "domain_name" {
   type        = string
   default     = "3tier.link"
 }
+
+# ---------- 비용 스위치 (E09 #46, DEC-67) ----------
+# 운영 기본값은 켜짐. 운영 관측은 끄지 않는다(Well-Architected COST09는 비운영 리소스를 끄라고 한다).
+# 짧은 확인 세션처럼 일부러 끌 때만 false. 관제+로그가 시간당 비용의 약 34%(docs/cost.md 6·7절)
+variable "enable_monitoring" {
+  description = "관제 VPC의 Prometheus·Grafana와 수집 에이전트"
+  type        = bool
+  default     = true
+}
+
+variable "enable_logging" {
+  description = "관제 VPC의 ELK와 앱 FireLens. 끄면 앱 로그는 CloudWatch Logs(awslogs)로 간다"
+  type        = bool
+  default     = true
+}
+
+variable "enable_spot" {
+  description = "앱 컨테이너 인스턴스에 Spot 용량 공급자를 더한다(온디맨드 base 1 + 나머지 Spot)"
+  type        = bool
+  default     = true
+}

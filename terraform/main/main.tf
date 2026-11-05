@@ -2,6 +2,9 @@
 
 locals {
   name_prefix = "3tier-${var.env}"
+
+  # 관제 VPC(NAT·피어링)는 관제나 로그 중 하나라도 켜면 만든다
+  observability_vpc = var.enable_monitoring || var.enable_logging
 }
 
 module "network" {
@@ -79,10 +82,19 @@ module "compute" {
   hosted_zone_id = data.aws_route53_zone.main.zone_id
 
   # 앱 로그 → FireLens → 관제 VPC Elasticsearch(E12 #98). CloudWatch Logs에는 라우터 자신의 로그만 남는다
-  enable_log_router             = true
-  elasticsearch_host            = module.logging.elk_private_ip
-  elasticsearch_user_secret_arn = module.logging.fluentbit_secret_arn
-  log_index_prefix              = module.logging.log_index_prefix
+  enable_log_router             = var.enable_logging
+  elasticsearch_host            = var.enable_logging ? module.logging[0].elk_private_ip : ""
+  elasticsearch_user_secret_arn = var.enable_logging ? module.logging[0].fluentbit_secret_arn : ""
+  log_index_prefix              = var.enable_logging ? module.logging[0].log_index_prefix : "app-board"
+
+  # 관제를 끄면 수집 에이전트도 끈다(수집할 Prometheus가 없다)
+  enable_metrics_agents = var.enable_monitoring
+
+  # Spot(E09 #46, DEC-67): 온디맨드 1대(태스크 1개)를 base로 두고 나머지 태스크는 Spot 인스턴스에.
+  # 온디맨드 ASG 최소는 base에 맞춰 1대로 줄인다(나머지 용량은 Spot ASG가 채운다)
+  enable_spot    = var.enable_spot
+  on_demand_base = 1
+  asg_min_size   = var.enable_spot ? 1 : 2
 }
 
 module "observability" {
@@ -103,6 +115,7 @@ module "observability" {
 # 이름 접두사 3tier-prod-mon: 배포 역할 권한 범위(3tier-prod-* 역할·인스턴스 프로필·비밀)를 넓히지 않으려고.
 module "network_monitoring" {
   source = "../modules/network"
+  count  = local.observability_vpc ? 1 : 0
 
   name_prefix          = "${local.name_prefix}-mon"
   vpc_cidr             = "10.100.0.0/16"
@@ -118,12 +131,13 @@ module "network_monitoring" {
 # 관제 ↔ 운영. 스테이징은 별도 루트(DEC-60)라 관제 ↔ 스테이징 피어링은 #101에서 만든다.
 module "peering_monitoring_prod" {
   source = "../modules/vpc_peering"
+  count  = local.observability_vpc ? 1 : 0
 
   name = "${local.name_prefix}-pcx-mon-prod"
 
-  requester_vpc_id          = module.network_monitoring.vpc_id
-  requester_cidr            = module.network_monitoring.vpc_cidr
-  requester_route_table_ids = module.network_monitoring.private_route_table_ids
+  requester_vpc_id          = module.network_monitoring[0].vpc_id
+  requester_cidr            = module.network_monitoring[0].vpc_cidr
+  requester_route_table_ids = module.network_monitoring[0].private_route_table_ids
 
   accepter_vpc_id          = module.network.vpc_id
   accepter_cidr            = module.network.vpc_cidr
@@ -132,20 +146,21 @@ module "peering_monitoring_prod" {
 
 module "monitoring" {
   source = "../modules/monitoring"
+  count  = var.enable_monitoring ? 1 : 0
 
   name_prefix = "${local.name_prefix}-mon"
-  vpc_id      = module.network_monitoring.vpc_id
+  vpc_id      = module.network_monitoring[0].vpc_id
 
   target_instance_security_group_id = module.compute.instance_security_group_id
   target_app_security_group_id      = module.network.app_security_group_id
-  peering_dependency_ids            = module.peering_monitoring_prod.route_ids
+  peering_dependency_ids            = module.peering_monitoring_prod[0].route_ids
 
   # 관제 서버(#92, DEC-54·55·57·59)
-  region          = var.region
-  subnet_id       = module.network_monitoring.private_subnet_ids[0]
-  target_asg_name = module.compute.asg_name
+  region           = var.region
+  subnet_id        = module.network_monitoring[0].private_subnet_ids[0]
+  target_asg_names = module.compute.asg_names
 
-  network_egress_dependency_ids = module.network_monitoring.private_egress_dependency_ids
+  network_egress_dependency_ids = module.network_monitoring[0].private_egress_dependency_ids
 
   # 앱 지표(#94): Cloud Map 존을 관제 VPC에 연결하고 그 이름으로 수집
   app_discovery_zone_id  = module.compute.app_discovery_zone_id
@@ -162,13 +177,35 @@ module "monitoring" {
 # 관제 VPC에 Elasticsearch·Kibana 단일 노드. 관제 서버와 다른 AZ(2c) 서브넷에 둔다
 module "logging" {
   source = "../modules/logging"
+  count  = var.enable_logging ? 1 : 0
 
   name_prefix = "${local.name_prefix}-mon"
   region      = var.region
-  vpc_id      = module.network_monitoring.vpc_id
-  subnet_id   = module.network_monitoring.private_subnet_ids[1]
+  vpc_id      = module.network_monitoring[0].vpc_id
+  subnet_id   = module.network_monitoring[0].private_subnet_ids[1]
 
-  peering_dependency_ids        = module.peering_monitoring_prod.route_ids
-  network_egress_dependency_ids = module.network_monitoring.private_egress_dependency_ids
+  peering_dependency_ids        = module.peering_monitoring_prod[0].route_ids
+  network_egress_dependency_ids = module.network_monitoring[0].private_egress_dependency_ids
   log_source_security_group_id  = module.network.app_security_group_id # FireLens는 앱 태스크 ENI를 쓴다(#98)
+}
+
+# 관제·로그를 켜고 끌 수 있게 count를 붙이면서 주소만 바뀐다(E09 #46)
+moved {
+  from = module.network_monitoring
+  to   = module.network_monitoring[0]
+}
+
+moved {
+  from = module.peering_monitoring_prod
+  to   = module.peering_monitoring_prod[0]
+}
+
+moved {
+  from = module.monitoring
+  to   = module.monitoring[0]
+}
+
+moved {
+  from = module.logging
+  to   = module.logging[0]
 }

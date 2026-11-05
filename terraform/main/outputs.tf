@@ -60,37 +60,37 @@ output "log_group_name" {
 
 output "monitoring_vpc_id" {
   description = "관제 VPC(E11)"
-  value       = module.network_monitoring.vpc_id
+  value       = try(module.network_monitoring[0].vpc_id, null)
 }
 
 output "peering_monitoring_prod_id" {
   description = "관제 ↔ 운영 VPC 피어링"
-  value       = module.peering_monitoring_prod.peering_connection_id
+  value       = try(module.peering_monitoring_prod[0].peering_connection_id, null)
 }
 
 output "nat_gateway_ids" {
   description = "운영 리전 NAT, 관제 영역 NAT"
   value = {
     prod       = module.network.nat_gateway_id
-    monitoring = module.network_monitoring.nat_gateway_id
+    monitoring = try(module.network_monitoring[0].nat_gateway_id, null)
   }
 }
 
 output "monitoring_server_instance_id" {
   description = "관제 서버. aws ssm start-session --target <이 값> --document-name AWS-StartPortForwardingSession --parameters portNumber=3000,localPortNumber=3000"
-  value       = module.monitoring.server_instance_id
+  value       = try(module.monitoring[0].server_instance_id, null)
 }
 
 output "grafana_admin_secret_name" {
-  value = module.monitoring.grafana_admin_secret_name
+  value = try(module.monitoring[0].grafana_admin_secret_name, null)
 }
 
 output "elk_instance_id" {
   description = "ELK 서버(E12). Kibana: aws ssm start-session --target <이 값> --document-name AWS-StartPortForwardingSession --parameters portNumber=5601,localPortNumber=5601"
-  value       = module.logging.elk_instance_id
+  value       = try(module.logging[0].elk_instance_id, null)
 }
 
 output "elastic_secret_name" {
   description = "Kibana 로그인 사용자 elastic의 비밀번호가 든 비밀"
-  value       = module.logging.elastic_secret_name
+  value       = try(module.logging[0].elastic_secret_name, null)
 }
