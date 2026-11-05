@@ -54,7 +54,7 @@ Fargate 때는 같은 destroy 순서였지만 태스크 정지를 Fargate 제어
 
 남긴 것:
 - 표준 구성은 ECS(`ecs`, `ecs-agent`, `ecs-telemetry`)·ECR·CloudWatch Logs·Secrets Manager VPC 엔드포인트를 사설 서브넷에 두어 agent가 NAT 없이도 통신하게 하는 것이다. 엔드포인트당 시간당 약 0.01 USD × AZ의 상시 비용이 들어 NAT를 유지했다(엔드포인트와 NAT 비용 비교는 [cost.md](../cost.md) 6절).
-- destroy가 10분을 넘으면 기다리지 말고 `STOPPING` 태스크와 `agentConnected`를 바로 본다. 세션 체크에 넣었다.
+- destroy가 10분을 넘으면 기다리지 말고 `STOPPING` 태스크와 `agentConnected`를 바로 본다. destroy 뒤 'Destroy complete'와 리소스 0을 확인하는 절차를 두었다.
 
 ## 재발: 2026-11-02 16:43, 두 번째 원인
 
@@ -65,7 +65,7 @@ PR #109(경로 의존)를 머지하고 다시 띄운 뒤 돌린 destroy(run 4140
 - 같은 방식(컨테이너 인스턴스 강제 등록 해제 → 서비스 INACTIVE 13:11 → destroy 재실행)으로 정리했다.
 - 조치: 앱 서비스가 그 정책 연결에도 의존하게 했다. #93 데몬 서비스(node_exporter·cAdvisor)도 같은 의존을 건다.
 - 배운 것: "ECS agent가 태스크 정지를 보고하는 데 필요한 것"은 네트워크 경로, 인스턴스 역할 권한, 인스턴스 자체(ASG) 세 가지다. 서비스는 셋 모두보다 먼저 지워져야 한다. ASG는 용량 공급자를 거쳐 이미 서비스 뒤에 지워진다.
-- 비용 영향: 실패한 destroy 뒤 RDS·ALB·NAT 2개·인스턴스 2대가 다음 날 13:1x까지 약 20시간 떠 있었다(요금표 기준 약 5 USD). 원인은 destroy 결과를 끝까지 확인하지 않고 세션을 마친 것이다. 조치로 세션 끝 destroy는 끝날 때까지 지켜보고 "Destroy complete"와 리소스 0을 확인하는 절차를 세션 체크에 넣었다.
+- 비용 영향: 실패한 destroy 뒤 RDS·ALB·NAT 2개·인스턴스 2대가 다음 날 13:1x까지 약 20시간 떠 있었다(요금표 기준 약 5 USD). 원인은 destroy 결과를 끝까지 확인하지 않고 세션을 마친 것이다. 조치로 세션 끝 destroy는 끝날 때까지 지켜보고, destroy 뒤 "Destroy complete"와 리소스 0을 확인하는 절차를 두었다.
 
 ## 영향
 

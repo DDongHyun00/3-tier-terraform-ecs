@@ -17,7 +17,7 @@ Spring Boot 게시판(앱은 일부러 단순하게 두었습니다)을 AWS 3-Ti
 | Spot 회수 | FIS로 회수 예고를 보내며 개선을 반복해 요청 실패 **13 → 18 → 12 → 0건** | [비용 10절](docs/cost.md#10-spot-용량-공급자와-관측-토글-e09-46), [DEC-67](docs/adr/0067-spot-capacity-mix.md) |
 | 탐지 | CPU 과부하 알림 Grafana **4분 10초** vs CloudWatch 6분 26초. 1분 남짓 전체 중단은 Grafana만 잡음(약 50초) | [관측 비교](docs/monitoring.md) |
 | 원인 추적 | DB 차단 장애에서 로그에 원인 줄이 **10.7초** 만에 남고, 같은 요청 ID로 500 응답까지 연결 | [중앙 로그](docs/logging.md) |
-| 비용 | 쓰지 않을 때 destroy로 월 195 → 22.79 USD(**−88%**). Spot으로 컴퓨트 −15%, 관측 서버를 끈 세션 −34% | [비용 리포트](docs/cost.md) |
+| 비용 | 쓰지 않을 때 destroy로 월 195 → 22.79 USD(**−88%**, 요금표 추정, v1 기준). Spot으로 컴퓨트 −15%, 관측 서버를 끈 세션 −34% | [비용 리포트](docs/cost.md) |
 
 ## 아키텍처
 
@@ -76,7 +76,7 @@ flowchart LR
 | | |
 |---|---|
 | ![ECS 용량 공급자](docs/images/02-ecs-capacity-providers.jpg)<br/>온디맨드·Spot 용량 공급자와 AZ별 인스턴스 | ![대상 그룹](docs/images/03-target-group-healthy.jpg)<br/>ALB 대상 그룹 healthy |
-| ![승인 배포](docs/images/04-deploy-approval.jpg)<br/>빌드 → 스테이징 → 운영 승인 대기 | ![부하 중 대시보드](docs/images/05-cloudwatch-dashboard-load.jpg)<br/>200 RPS 부하 중 대시보드 |
+| ![승인 배포](docs/images/04-deploy-approval.jpg)<br/>빌드 → 스테이징 → 운영 승인 대기 | ![부하 중 대시보드](docs/images/05-cloudwatch-dashboard-load.jpg)<br/>200 RPS 부하 중 대시보드(E07 당시 CloudWatch 대시보드, 이후 Grafana로 옮김) |
 | ![스케일 아웃·인](docs/images/06-scale-out-in.jpg)<br/>태스크 2 → 4 → 2 | ![Slack 알람](docs/images/07-slack-alarm.jpg)<br/>5xx 비율 알람과 해소 |
 | ![Kibana](docs/images/08-kibana-trace.jpg)<br/>요청 ID로 로그 추적 | |
 
@@ -98,7 +98,7 @@ flowchart LR
 ## 실행 방법
 
 1. `terraform/bootstrap`을 한 번 apply합니다(state 버킷, OIDC, 배포 역할, ECR, 호스팅 존). 값은 `terraform.tfvars.example`을 참고합니다.
-2. 이후 인프라는 GitHub Actions로만 다룹니다.
+2. 이후 인프라는 평소에는 GitHub Actions로 다루고, 장애 실험용 변수(예: RDS Multi-AZ, [06](docs/troubleshooting/06-rds-failover.md))만 로컬 apply로 줍니다.
    - `terraform/**`를 바꾼 PR: plan 결과가 코멘트로 달리고, 머지하면 운영에 apply됩니다.
    - 수동: Actions → `terraform` → `action=apply` 또는 `destroy`
    - 관측 서버 없이 띄우기: `enable_monitoring=false`, `enable_logging=false`

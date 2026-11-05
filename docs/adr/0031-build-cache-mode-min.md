@@ -17,7 +17,7 @@
 
 - A. max 유지: 다단계 빌드에서 적중률이 높다고 문서에 나오고 흔히 쓰는 설정이다. 그런데 매 커밋 바뀌는 계층에는 이득이 없고 내보내기 2분 36초를 감수해야 한다.
 - B. min 전환: 바뀌는 중간층을 저장하지 않아 내보내기가 수 초로 줄어든다. 대신 빌더 단계의 Gradle 배포판·의존성 다운로드가 매번 생긴다(30초~1분 추정). 예상은 코드 변경 빌드 3분 58초 → 약 2분~2분 30초.
-- C. min + Gradle 빌드를 Docker 밖(`gradle/actions/setup-gradle`)에서: 가장 바르지만 Dockerfile 구조가 바뀌고 이슈 범위 밖이다. 별도 이슈 후보로 남겼다.
+- C. min + Gradle 빌드를 Docker 밖(`gradle/actions/setup-gradle`)에서: 가장 바르지만 Dockerfile 구조가 바뀌고 이슈 범위 밖이다. 범위 밖으로 두었다.
 
 ## 결정
 
@@ -34,4 +34,4 @@ B. deploy.yml의 `cache-to`를 `type=gha,mode=min`으로 바꾼다. 측정은 �
 
 - 코드 변경 빌드 구간: dependencies 15초, bootJar 45초, extract 2초. 예상보다 빨랐고, 걱정한 재배포 지연은 없었다.
 - 캐시 합계는 45개 1.49 GiB로 변화가 없었다. 되돌릴 이유가 없어 min을 유지한다.
-- 범위 밖으로 남긴 것: 액션 버전을 커밋 SHA로 고정 + Dependabot, C안. 각각 별도 이슈 후보다.
+- 범위 밖으로 남긴 것: 액션 버전을 커밋 SHA로 고정 + Dependabot, C안. 이 프로젝트에서는 범위 밖으로 두었다.

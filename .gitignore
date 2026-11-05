@@ -12,5 +12,8 @@ crash.log
 .idea/
 *.iml
 
-# 기획 문서 (로컬 보관)
+# 개인 문서 (로컬 보관)
 *.pdf
+
+# probe.ps1 기본 출력(측정 원시 기록)
+results/

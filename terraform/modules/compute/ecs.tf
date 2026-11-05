@@ -114,7 +114,7 @@ resource "aws_ecs_service" "app" {
   }
 
   # 기동 직후 헬스체크 실패를 무시하는 시간(240초). Fargate 0.25 vCPU 때 실측 기동 120초(로컬 11초)에 맞췄고, 0.5 vCPU로 올린 뒤 기동은 약 23초다(DEC-46).
-  # 60초로 뒀다가 태스크가 기동 중에 교체되는 루프가 생겼다 (TS-11)
+  # 60초로 뒀다가 태스크가 기동 중에 교체되는 루프가 생겼다
   health_check_grace_period_seconds = var.health_check_grace_period
 
   network_configuration {

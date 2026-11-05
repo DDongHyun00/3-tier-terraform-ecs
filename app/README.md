@@ -41,6 +41,7 @@ DB 접속 정보는 환경 변수로 바꿀 수 있습니다. 지정하지 않�
 | `STORAGE_TYPE` | `local` (첨부파일을 디스크에 저장. 운영은 `s3`) |
 | `UPLOAD_DIR` | `uploads` (`local`일 때 저장 폴더) |
 | `S3_BUCKET` | 없음 (`s3`일 때 필수. 자격 증명은 ECS 태스크 역할, 리전은 `AWS_REGION`) |
+| `ADMIN_PASSWORD` | 비움 (로컬은 비워 둠. 운영·스테이징은 Secrets Manager DB 비밀의 `admin_password`. 값이 있으면 기동 때 admin 비밀번호를 이 값으로 바꿈) |
 
 테스트(`./gradlew build`)는 Testcontainers로 PostgreSQL 컨테이너를 띄우므로 Docker가 실행 중이어야 합니다.
 
@@ -57,7 +58,7 @@ docker compose down -v            # 종료 (DB 볼륨 삭제)
 
 ## 테스트 계정
 
-로컬 실행(docker compose) 전용입니다. 운영에서는 관리자 비밀번호를 Secrets Manager 값으로 바꿉니다.
+시드 데이터(`V2__seed.sql`)는 Flyway가 모든 환경에서 적용하므로 아래 계정은 로컬뿐 아니라 운영·스테이징에도 만들어집니다. 일반 사용자 user1~4(비밀번호 1111, 권한 USER)는 배포된 데모 사이트를 둘러보기 위한 계정으로 의도해서 남겨 두었습니다. 관리자 admin의 비밀번호는 환경 변수 `ADMIN_PASSWORD`가 있으면 앱이 기동할 때 그 값으로 바뀝니다(`AdminPasswordInitializer`). 운영·스테이징은 Secrets Manager DB 비밀의 `admin_password` 키를 주입하므로 1111로는 관리자로 로그인할 수 없고, 로컬처럼 값이 비어 있으면 시드 비밀번호 1111이 그대로입니다.
 
 | 아이디 | 비밀번호 | 닉네임 | 권한 |
 |---|---|---|---|
