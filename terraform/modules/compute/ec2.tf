@@ -88,9 +88,17 @@ resource "terraform_data" "network_egress" {
   input = var.network_egress_dependency_ids
 }
 
+# Spot을 켜면 ASG가 둘이 되고 각각 1대씩이라, ASG마다 따로 AZ를 고르면 두 대가 같은 AZ에 뜰 수 있다(11/05 실제로 둘 다 2a).
+# ASG는 자기 안에서만 AZ를 고르게 나누므로, 온디맨드는 첫 AZ, Spot은 둘째 AZ 서브넷만 쓰게 나눠 항상 다른 AZ에 둔다(DEC-50 D4 AZ 분산 유지).
+# 대가: 한 AZ가 장애면 그 AZ 담당 ASG는 다른 AZ로 옮겨 띄우지 못한다. 다른 AZ의 1대가 남아 서비스는 이어진다
+locals {
+  on_demand_subnet_ids = var.enable_spot ? [var.private_subnet_ids[0]] : var.private_subnet_ids
+  spot_subnet_ids      = var.enable_spot ? [var.private_subnet_ids[1]] : []
+}
+
 resource "aws_autoscaling_group" "ecs" {
   name                = "${var.name_prefix}-ecs-asg"
-  vpc_zone_identifier = var.private_subnet_ids
+  vpc_zone_identifier = local.on_demand_subnet_ids
   min_size            = var.asg_min_size
   max_size            = var.asg_max_size
 
@@ -154,7 +162,7 @@ resource "aws_autoscaling_group" "spot" {
   count = var.enable_spot ? 1 : 0
 
   name                = "${var.name_prefix}-ecs-spot-asg"
-  vpc_zone_identifier = var.private_subnet_ids
+  vpc_zone_identifier = local.spot_subnet_ids
   min_size            = 0
   max_size            = var.spot_asg_max_size
 
