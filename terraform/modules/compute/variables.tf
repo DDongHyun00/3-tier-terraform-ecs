@@ -188,6 +188,12 @@ variable "cadvisor_image" {
   default = "gcr.io/cadvisor/cadvisor:v0.49.1"
 }
 
+variable "permissions_boundary_name" {
+  description = "이 모듈이 만드는 역할에 붙일 permissions boundary(bootstrap). 운영 3tier-ecs-boundary, 스테이징 3tier-staging-ecs-boundary(DEC-63)"
+  type        = string
+  default     = "3tier-ecs-boundary"
+}
+
 # ---------- 로그 라우터 (E12 #98, FireLens) ----------
 # 켜면 앱 로그를 FireLens(Fluent Bit 사이드카)로 Elasticsearch에 보낸다. 끄면 지금처럼 awslogs → CloudWatch Logs
 variable "enable_log_router" {

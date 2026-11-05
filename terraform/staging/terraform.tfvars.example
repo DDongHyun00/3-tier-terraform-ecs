@@ -1,0 +1,2 @@
+# 복사해서 terraform.tfvars로 쓴다(추적하지 않는다). CI는 TF_VAR_account_suffix
+account_suffix = "0000"

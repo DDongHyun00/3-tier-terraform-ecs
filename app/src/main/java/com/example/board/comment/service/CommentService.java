@@ -1,5 +1,6 @@
 package com.example.board.comment.service;
 
+import com.example.board.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import com.example.board.board.entity.Post;
 import com.example.board.board.repository.PostRepository;
@@ -37,7 +38,7 @@ public class CommentService {
                               Long parentId) {
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
@@ -48,7 +49,7 @@ public class CommentService {
         Comment parent = null;
         if (parentId != null) {
             parent = commentRepository.findById(parentId)
-                    .orElseThrow(() -> new IllegalArgumentException("부모 댓글을 찾을 수 없습니다."));
+                    .orElseThrow(() -> new NotFoundException("부모 댓글을 찾을 수 없습니다."));
         }
 
         Comment comment = Comment.builder()
@@ -84,7 +85,7 @@ public class CommentService {
     @Transactional(readOnly = true)
     public List<CommentResponseDto> getComments(Long postId, String currentUsername) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("게시글을 찾을 수 없습니다."));
 
         // 1) 댓글 + 작성자(User) 함께 조회
         List<Comment> comments = commentRepository.findByPostWithUser(postId);
@@ -152,7 +153,7 @@ public class CommentService {
     @Transactional
     public void updateComment(Long commentId, String username, CommentRequestDto dto) {
         Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("댓글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("댓글을 찾을 수 없습니다."));
         if (!comment.getUser().getUsername().equals(username)) {
             throw new SecurityException("본인 댓글만 수정할 수 있습니다.");
         }
@@ -163,7 +164,7 @@ public class CommentService {
     @Transactional
     public void deleteComment(Long commentId, String username) {
         Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("댓글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("댓글을 찾을 수 없습니다."));
         if (!comment.getUser().getUsername().equals(username)) {
             throw new SecurityException("본인 댓글만 삭제할 수 있습니다.");
         }
@@ -174,7 +175,7 @@ public class CommentService {
     @Transactional(readOnly = true)
     public CommentResponseDto getCommentDto(Long commentId, String currentUsername) {
         Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("댓글을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("댓글을 찾을 수 없습니다."));
         return toDto(comment, currentUsername);
     }
 }

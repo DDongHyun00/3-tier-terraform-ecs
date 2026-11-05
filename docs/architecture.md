@@ -122,10 +122,15 @@ CloudWatch에는 관제 서버가 죽어도 오는 비상 알람 2개와 자동 
 | AppCpuWarning | 앱 컨테이너 평균 CPU(예약 0.5 vCPU 대비 %, cAdvisor) | 60% 초과 3분 | warning |
 | AppCpuCritical | 같음 | 80% 초과 3분 | critical |
 | AppNoScrapeTarget | 지표를 내는 앱 태스크 수 | 1 미만 30초 | critical |
+| AppHttp5xxRate | 앱 5xx 비율(http_server_requests, 1분 rate). 분당 요청 10건 미만이면 0 | 5% 초과 1분 | critical |
 | RdsStorageLow | RDS FreeStorageSpace(CloudWatch 데이터 소스, 5분 최솟값) | 2 GB 미만 | critical |
 | RdsConnectionsHigh | RDS DatabaseConnections(CloudWatch 데이터 소스, 1분 최댓값) | 60 초과 3분 | warning |
 
 앱 규칙은 10초마다, RDS 규칙은 지표가 1~5분 단위라 1분마다 평가합니다.
+
+AppHttp5xxRate는 #100 DB 연결 장애에서 Grafana 규칙이 하나도 울리지 않은 공백을 메우려고 더했습니다(#131). 시험에서 500 발생 1분 27.7초 뒤 SNS로 발송됐습니다.
+
+**중앙 로그(E12, DEC-64~66)**: 앱은 Elastic Common Schema JSON으로 로그를 내고(Spring Boot 구조화 로그), 요청마다 ALB `X-Amzn-Trace-Id`를 `http.request.id`로 붙입니다. 앱 태스크의 FireLens 사이드카(aws-for-fluent-bit)가 관제 VPC의 Elasticsearch(`app-board-YYYY.MM.DD`)로 보내고, Kibana는 SSM 포트 포워딩으로만 엽니다. Fluent Bit 계정은 이 인덱스에 쓰기만 합니다. 앱 로그는 CloudWatch Logs로 가지 않고, 라우터 자신의 로그만 갑니다. 장애 추적 기록과 로그 스택 비교는 `docs/logging.md`.
 
 AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단) 때 CloudWatch 알람이 울리지 않은 탐지 공백을 메우려는 규칙입니다. 11/04 같은 장애(약 65초 중단)에서 Grafana는 중단 약 50초 뒤 Slack에 알렸고 CloudWatch 알람은 이번에도 울리지 않았습니다. 같은 CPU 부하에서는 Grafana 경고가 4분 10초, CloudWatch CPU 알람이 6분 26초였습니다(실측 기록 DB).
 
@@ -147,7 +152,7 @@ AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단)
 
 - **/16 VPC, /24 서브넷**: /24는 IP 251개(AWS 예약 5개 제외)로 태스크 수십 개까지 여유가 있고, /16 안에 /24가 256개 들어가므로 계층을 추가해도 번호가 겹치지 않습니다. 0번대는 퍼블릭, 10번대는 프라이빗, 20번대는 DB로 두 번째 옥텟만 보고 계층을 알 수 있게 했습니다.
 - **AZ 2곳 (2a, 2c)**: 서울 리전의 AZ 4곳(2a~2d) 모두 Fargate와 db.t4g.micro를 지원함을 확인했습니다(2026-10-07). 2a와 2c는 서울에서 가장 먼저 생긴 AZ라 신규 서비스 지원이 가장 빠르고, 국내 자료에서 가장 흔히 쓰는 조합이라 골랐습니다. 두 AZ 사이 지연은 1ms 안팎이라 성능 차이는 없습니다.
-- **DB 서브넷이 2개인 이유**: RDS 서브넷 그룹이 최소 2개 AZ를 요구합니다. Single-AZ라도 2개가 필요하고, 나중에 Multi-AZ를 켜면 2c에 대기 인스턴스가 생깁니다.
+- **DB 서브넷이 2개인 이유**: RDS 서브넷 그룹이 최소 2개 AZ를 요구합니다. Single-AZ라도 2개가 필요하고, Multi-AZ를 켜면 주 DB가 없는 쪽 AZ에 대기 인스턴스가 생깁니다(#82 실측 때는 주 2c, 대기 2a).
 
 **관제 VPC(E11, DEC-40·52·53)**: Prometheus·Grafana(#92)와 ELK(E12)가 들어가는 공용 서비스 VPC입니다. 같은 network 모듈로 만들고 main에 두어 세션마다 생성·삭제합니다. 스테이징 VPC는 10.1.0.0/16으로 별도 루트(`terraform/staging`, DEC-60)에서 만듭니다.
 
@@ -226,7 +231,7 @@ AppNoScrapeTarget은 E08에서 태스크 2개 동시 종료(46.5~68.8초 중단)
 | 엔진 | PostgreSQL 16.15 (서울 리전 최신 16.x, 2026-10-07 확인) | 앱 8단계에서 16으로 확정. 마이너는 Terraform에서 `auto_minor_version_upgrade`로 자동 반영 |
 | 클래스 | db.t4g.micro | 비용. ARM(Graviton)이 같은 급 x86보다 쌈 |
 | 스토리지 | gp3 20 GB | 최소 크기 |
-| Multi-AZ | 변수 `multi_az`, 기본 false | 변수로 켤 수 있게 두었고 장애 조치 측정은 [#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82)에서 한다 |
+| Multi-AZ | 변수 `multi_az`, 기본 false | 변수로 켤 수 있게 두었다. [#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82)에서 잠시 켜고 강제 장애 조치: 장애 조치 43초, 사용자 영향 약 44초, 5xx 0건([06-rds-failover.md](troubleshooting/06-rds-failover.md)) |
 | 퍼블릭 접근 | 불가 | DB 서브넷 + sg-db |
 | 백업 보존 | 1일 | 반복 destroy 전제. 운영이면 7일 이상 |
 | 삭제 보호 | 끔 | 반복 destroy 전제 |
@@ -333,7 +338,7 @@ terraform/
 |---|---|---|
 | 컴퓨트 | ECS on EC2 (t3.small 2~4대, 배포 중 최대 8대) | 처음엔 Fargate(서버 관리 없음). 호스트 관측·에이전트 설치와 2단계 스케일링 측정을 위해 E10에서 전환(DEC-36·DEC-50). EKS는 제어 플레인만 월 73달러라 범위에 과함 |
 | DB 배치 | DB 서브넷, 외부 경로 없음 | 보안 영역의 기본. 접근은 sg-app에서만 |
-| DB 가용성 | Single-AZ, Multi-AZ는 변수 | 비용. 변수로 켤 수 있게 두었고 장애 조치 측정은 [#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82)에서 한다 |
+| DB 가용성 | Single-AZ, Multi-AZ는 변수 | 비용. Multi-AZ는 시간당 +0.03 USD로 DB 중단을 약 44초로 줄인다([#82](https://github.com/DDongHyun00/3-tier-terraform-ecs/issues/82) 실측). 세션 운영이라 Single-AZ 유지 |
 | NAT | AZ별 2개 | 기획서의 다중 AZ 기준. 비용 트레이드오프는 리포트에 기록 |
 | 배포 인증 | GitHub OIDC | 액세스 키 없음. 역할 신뢰 조건으로 레포·브랜치 제한 |
 | 사람 인증 | IAM Identity Center + MFA | 계정에 영구 키 0개 |
@@ -367,7 +372,7 @@ terraform/
 
 | 항목 | 영향 | 대응 |
 |---|---|---|
-| RDS Single-AZ | DB가 있는 AZ가 죽으면 서비스 전체가 멈춥니다. NAT를 AZ별로 둔 것과 별개입니다 | 비용 때문에 감수. 장애 조치 시간은 #82에서 Multi-AZ를 잠시 켜고 측정 |
+| RDS Single-AZ | DB가 있는 AZ가 죽으면 서비스 전체가 멈춥니다. NAT를 AZ별로 둔 것과 별개입니다 | 비용 때문에 감수. Multi-AZ였다면 약 44초 대기 뒤 회복(#82 실측, 장애 조치 43초) |
 | ECS 지표 지연(약 4분) | CloudWatch 알람이 장애를 늦게 잡습니다. 1분 기간·5/5·notBreaching 조합은 울리지 않았습니다 | 알람을 missing + 5분 중 3분으로 조정(#80). Prometheus·Grafana 15초 수집으로 보완(E11) |
 | SSE 알림을 태스크 메모리에 둠 | 태스크가 2개 이상이면 알림이 누락될 수 있고, ALB 유휴 60초마다 연결이 끊겨 5xx가 2분에 1건 정도 생깁니다 | 5xx 비율 알람은 분당 10건 미만을 0으로 계산. 앱 구조 개선은 범위 밖 |
 | 운영·스테이징이 같은 AWS 계정 | VPC는 네트워크만 나누고 IAM 권한과 서비스 쿼터는 나누지 못합니다 | 환경별 역할·비밀·버킷을 분리. 실무라면 계정을 나눕니다 |

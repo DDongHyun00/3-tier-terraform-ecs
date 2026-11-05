@@ -119,6 +119,34 @@ groups:
         annotations:
           summary: '지표를 내는 앱 태스크 {{ printf "%.0f" $values.A.Value }}개(0개면 전체 중단)'
 
+      # 앱 5xx 비율(#131). DB 연결 장애(#100)에서 CPU·타깃 규칙은 울리지 않았고 CloudWatch 비상 알람만 5분 58초에 울렸다.
+      # 요청이 아주 적을 때 한두 건으로 튀지 않게 분당 요청 10건 미만이면 0으로 본다(CloudWatch 5xx 알람과 같은 기준)
+      - uid: app-5xx-rate
+        title: AppHttp5xxRate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (sum(rate(http_server_requests_seconds_count{job="app",status=~"5.."}[1m])) / sum(rate(http_server_requests_seconds_count{job="app"}[1m])) * 100 and sum(rate(http_server_requests_seconds_count{job="app"}[1m])) * 60 >= ${http_5xx_min_requests}) or vector(0)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [${http_5xx_rate_percent}] }
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: '앱 5xx 응답이 ${http_5xx_rate_percent}%를 1분 넘었다(현재 {{ printf "%.1f" $values.A.Value }}%). 앱 로그(Kibana app-board-*)에서 http.response.status_code:500과 같은 요청 ID의 WARN·ERROR 확인'
+
   # RDS 지표는 CloudWatch에만 있어 CloudWatch 데이터 소스로 읽는다. CloudWatch 알람에서 옮겨 왔다(DEC-45·62, #95).
   # 지표가 1~5분 단위라 1분마다 평가한다(10초로 두면 GetMetricData 호출만 늘고 새 값은 없다).
   - orgId: 1

@@ -1,5 +1,6 @@
 package com.example.board.file.controller;
 
+import com.example.board.common.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import com.example.board.file.entity.FileEntity;
 import com.example.board.file.repository.FileRepository;
@@ -24,7 +25,7 @@ public class FileController {
     @GetMapping("/files/{id}/download")
     public ResponseEntity<Resource> downloadFile(@PathVariable Long id) throws Exception {
         FileEntity file = fileRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("파일을 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("파일을 찾을 수 없습니다."));
 
         Resource resource = fileStorage.load(file.getSavedName());
 
