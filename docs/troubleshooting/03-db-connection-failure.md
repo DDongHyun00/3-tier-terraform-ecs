@@ -1,95 +1,102 @@
-# DB 연결 실패
+# DB 연결 차단
 
-앱 태스크와 RDS 사이 네트워크를 10분 동안 끊고, liveness·health·알람이 설계대로 동작하는지 확인했다. DB가 끊겨도 태스크가 교체되지 않아야 하고, 장애는 알람으로 잡혀야 한다.
+앱 태스크와 RDS 사이 네트워크를 10분 동안 끊고, DB가 끊겨도 태스크가 교체되지 않는지와 장애가 알람으로 잡히는지 확인했다.
+
+## 요약
+
+2026-11-02 01:03~01:13 KST에 태스크 2개(가용 영역마다 1개), RDS Single-AZ로 쟀다. 요청은 1초 간격 probe(URL 3개)뿐이었다.
+
+운영 DB를 직접 막은 실험이다. 스테이징이 생기기 전이었고 실사용자가 없어서 할 수 있었다.
 
 | 항목 | 값 |
 |---|---|
-| 날짜 | 2026-11-02 01:03~01:13 KST |
-| 환경 | prod (당시는 스테이징 구축 전이라 환경이 운영 하나뿐이고 실사용자가 없는 데모여서 운영에서 의도적으로 실험. 실무라면 스테이징) |
-| 조건 | 태스크 2개(AZ마다 1개), RDS Single-AZ, 요청은 probe 1초 간격(3개 URL)만 |
-| 사용자 영향 시간 | **약 10분 0초** (게시판·health 첫 실패 01:03:38.1 ~ 마지막 실패 응답 01:13:37.9) |
-| 복구 시간 (차단 해제 → 첫 정상 응답) | **1초 미만** (차단 종료 01:13:39.3, 대기 중이던 `/posts`가 01:13:38.7에 200) |
-| 태스크 교체 | **0건** (실험 내내 running 2/2, 타깃 2개 healthy) |
-| 울린 알람 | 5xx 비율만, **차단 시작 6분 11초 뒤** (01:09:49.7 ALARM). 목표 "탐지 5분 이내" 미달 |
+| 사용자 영향 | `/posts`와 health 약 10분 0초 실패, liveness는 실패 0 |
+| 차단 해제부터 정상 응답까지 | 1초 미만 |
+| 태스크 교체 | 0건 |
+| 울린 알람 | 5xx 비율 알람 하나, 차단 시작 6분 11초 뒤 |
 
-## 재현 방법
+탐지는 목표 "5분 이내"에 미달했다.
 
-차단은 AWS FIS 실험 템플릿 `3tier-db-disrupt`(`terraform/bootstrap/fis.tf`)로 했다. 액션 `aws:network:disrupt-connectivity`가 DB 서브넷 2개(태그 `Project`·`Tier=db`)의 NACL을 복제해 deny 규칙을 넣고 서브넷에 붙인다. `duration PT10M`이 지나면 FIS가 복제 NACL을 지우고 원래 NACL로 되돌린다.
+## 재현
 
-1. 사전 조건: bootstrap apply로 실험 역할 `3tier-fis`와 템플릿이 있고, main이 apply 상태(서비스 안정, 알람 5개 OK).
-2. probe 시작(계속 켜 둔다). 1초 간격으로 `/posts`, `/actuator/health`, `/actuator/health/liveness`를 호출해 시각·상태 코드·응답 시간을 CSV로 남긴다. 평시 5분을 먼저 잰다.
-3. 실험 시작. 템플릿 ID는 bootstrap 출력 `fis_db_disrupt_template_id`.
+차단은 AWS FIS 실험 템플릿 `3tier-db-disrupt`(`terraform/bootstrap/fis.tf`)로 했다. `aws:network:disrupt-connectivity` 액션이 DB 서브넷 2개의 NACL을 복제해 모든 트래픽을 막는 규칙을 넣고 서브넷에 붙인다. 10분(`PT10M`)이 지나면 FIS가 복제 NACL을 지우고 원래 NACL로 되돌린다.
+
+1. 1초 간격으로 `/posts`, `/actuator/health`, `/actuator/health/liveness`를 요청해 기록한다. 평시 5분을 먼저 잰다.
+2. 실험을 시작한다. 템플릿 ID는 bootstrap 출력 `fis_db_disrupt_template_id`에 있다.
 
         aws fis start-experiment --experiment-template-id <ID> --profile 3tier
 
-4. 10분 동안 probe, ECS 서비스 이벤트, 알람 상태를 본다.
-5. 자동 원복. 실험 상태가 `completed`가 되면 원래 NACL로 돌아온 것이다.
+3. 실험 상태가 `completed`가 되면 원래 NACL로 돌아온 것이다. 중간에 멈춰도 FIS가 되돌린다.
 
         aws fis get-experiment --id <실험 ID> --profile 3tier
-
-6. 중간에 멈춰야 하면 수동 중지. 중지해도 FIS가 원복한다.
-
         aws fis stop-experiment --id <실험 ID> --profile 3tier
 
-7. 원복 뒤 5분 더 probe를 돌려 회복을 잰다. 실험이 끝나기 전에는 main을 destroy하지 않는다(복제 NACL이 남아 VPC 삭제가 실패한다).
+실험이 끝나기 전에 main을 destroy하면 안 된다. 복제 NACL이 남아 VPC 삭제가 실패한다.
 
-## 예상 동작
+### 예상
 
-앱 설정 기준: HikariCP 기본값(풀 10, connectionTimeout 30초, validationTimeout 5초, maxLifetime 30분), PostgreSQL JDBC 기본값(connectTimeout 10초, socketTimeout 0 = 무제한).
+앱은 HikariCP 기본값(풀 10, 연결 대기 30초, 검증 5초)과 PostgreSQL JDBC 기본값(연결 10초, 소켓 타임아웃 없음)을 썼다.
 
 | 대상 | 예상 | 이유 |
 |---|---|---|
-| `/actuator/health/liveness` | 200 유지, 태스크 교체 없음 | DB를 보지 않는다. ALB 헬스체크는 쿠키가 없어 세션(JDBC) 조회도 하지 않는다 |
-| `/actuator/health` | 약 30초 걸려 503 | DB 지표가 풀에서 연결을 얻으려다 connectionTimeout 30초 |
-| `/posts` (게시판) | 약 30초 걸려 500, 또는 60초 넘게 매달려 ALB 504 | 놀던 연결은 검증 5초 실패 → 새 연결이 막혀 30초 후 예외. 쿼리 도중이던 연결은 socketTimeout이 없어 TCP 재전송이 끝날 때까지 매달리고, ALB 유휴 시간 60초에 504 |
-| 5xx 비율 알람 (`3tier-prod-alb-5xx-rate`) | 울림 | 5% 초과가 5분 중 3분. probe가 1초 간격(URL 3개)이라 분당 최소 요청 수 10건을 넘는다 |
-| RDS 연결 수 알람 (`3tier-prod-rds-connections-high`) | 안 울림 | 임계는 60 초과뿐이다. 연결 수는 그대로거나 줄어든다 |
-| 비정상 타깃 알람 (`3tier-prod-alb-unhealthy-targets`) | 안 울림 | liveness가 200이다. 울리면 그 자체가 발견이다 |
+| liveness | 200 유지, 태스크 교체 없음 | DB를 보지 않는다 |
+| `/actuator/health` | 약 30초 뒤 503 | 풀에서 연결을 30초 기다린다 |
+| `/posts` | 약 30초 뒤 500, 또는 60초 넘게 매달려 ALB 504 | 쿼리 도중인 연결은 소켓 타임아웃이 없어 오래 매달린다 |
+| 5xx 비율 알람 | 울림 | 5분 중 3분 동안 5%를 넘는다 |
+| 비정상 타깃 알람 | 안 울림 | liveness가 200이다 |
 
-## 증상
+## 무슨 일이 있었나
 
-타임라인(KST):
+| 시각 (KST) | 일 |
+|---|---|
+| 01:03:13 | 실험 시작 요청 |
+| 01:03:38 | 차단 시작, 첫 실패(`/posts` 500, health 503, 각각 약 30초 대기 뒤) |
+| 01:07 ~ 01:09 | RDS 연결 수 20에서 0으로 감소 |
+| 01:09:49 | 5xx 비율 알람 울림 |
+| 01:13:38 | 대기 중이던 `/posts`가 200 |
+| 01:13:39 | 차단 종료 |
 
-| 시각 | 일 | 출처 |
-|---|---|---|
-| 01:03:13.3 | `fis start-experiment` 요청, 실험 EXPzjjz7Ezqw8ijXfp | CLI 출력 |
-| 01:03:38.1 | 차단 action 시작(요청 후 약 25초) | `fis get-experiment` |
-| 01:03:38.1 | probe 첫 실패(`/posts` 500, `/actuator/health` 503, 각각 약 30초 대기 뒤) | probe CSV |
-| 01:04~01:12 | ALB Target 5xx 분당 104~120건 | CloudWatch |
-| 01:07~01:09 | RDS `DatabaseConnections` 20 → 19 → 9 → 0 | CloudWatch |
-| 01:09:49.7 | `3tier-prod-alb-5xx-rate` OK → ALARM | 알람 이력 |
-| 01:13:08.9 | 이때 시작한 `/posts`가 29.8초 대기 뒤 01:13:38.7에 200 | probe CSV |
-| 01:13:39.3 | 차단 action 종료, 실험 completed(01:13:39.6) | `fis get-experiment` |
-| 01:13~ | RDS `DatabaseConnections` 20으로 회복 | CloudWatch |
+probe 결과는 이렇다. liveness는 666회 중 실패 0이었다. `/actuator/health`는 666회 중 565회가 503, `/posts`는 666회 중 565회가 500이었다. 실패는 모두 약 30초를 기다린 뒤였다. 실험 동안 ECS 태스크는 시작, 중지, 등록 해제가 한 번도 없었다.
 
-probe(01:03~01:14): liveness 666회 실패 0, `/actuator/health` 666회 중 565회 503, `/posts` 666회 중 565회 500. 실패는 모두 약 30초 대기 뒤였고 ALB 504는 없었다.
+예상과 다른 점도 있었다. ALB 504는 한 건도 없었다. 요청이 1초 간격으로 짧게 끝나 쿼리 도중에 끊긴 연결이 거의 없었고, 쉬던 연결이 검증에 실패한 뒤 새 연결을 30초 기다리는 경로만 나타난 것으로 본다. RDS 쪽 연결 수는 차단하고 3~5분이 지나서야 0이 됐다. 패킷이 막혀서 RDS가 연결이 끊긴 걸 늦게 알아차렸다.
 
-ECS 서비스 이벤트: 실험 동안 태스크 시작·중지·등록 해제 이벤트 없음. 비정상 타깃 알람, RDS 연결 수 알람 상태 변화 없음.
-
-캡처: 콘솔 캡처 대신 위 CLI 결과와 5초 간격 상태 기록(CSV)으로 남겼다.
+5xx 비율 알람은 01:04부터 분당 100건 넘게 5xx가 났는데도 01:09:49에야 울렸다. "5분 중 3분" 조건에 최소 3분이 걸리고, ALB 지표가 들어오는 지연이 더해져 6분 11초가 됐다.
 
 ## 원인
 
-- **SG가 아니라 NACL로 끊은 이유**: sg-db의 인바운드 규칙은 SG 참조라 연결 추적 대상이다. 규칙을 지워도 이미 맺은 연결은 끊기지 않는다(AWS 문서: 즉시 차단하려면 NACL을 쓴다, https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-connection-tracking.html). Hikari 풀은 연결을 최대 30분(maxLifetime) 재사용하므로 SG만 지우면 장애가 최대 30분에 걸쳐 조금씩 나타난다. NACL은 상태가 없어 패킷 단위로 바로 막힌다.
-- **liveness가 DB를 보지 않는 이유**: DB 장애 때 ALB 헬스체크가 실패하면 ECS가 정상 태스크를 계속 교체한다. 교체해도 DB는 돌아오지 않으므로 교체 루프만 생긴다(E01 헬스체크 결정).
-- **응답이 30초 넘게 걸리는 이유**: Hikari connectionTimeout 30초 동안 연결을 기다린다. 이미 쿼리를 보낸 연결은 socketTimeout이 없어 OS의 TCP 재전송 한도까지 기다린다.
+- 보안 그룹 대신 NACL로 끊었다. 보안 그룹 규칙은 연결을 추적하기 때문에 규칙을 지워도 이미 맺은 연결은 끊기지 않는다([보안 그룹 연결 추적](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-connection-tracking.html)). Hikari는 연결을 최대 30분 재사용하므로 보안 그룹만 바꾸면 장애가 30분에 걸쳐 조금씩 나타난다. NACL은 상태가 없어 패킷 단위로 바로 막힌다.
+- liveness는 일부러 DB를 보지 않게 했다. DB 장애 때 ALB 헬스체크가 실패하면 ECS가 멀쩡한 태스크를 계속 교체한다. 교체해도 DB는 돌아오지 않으니 교체 루프만 생긴다.
+- 응답이 30초 넘게 걸린 건 Hikari가 연결을 30초 기다리기 때문이다.
 
-## 해결
+## 조치와 재발 방지
 
-- 차단 해제는 FIS가 자동으로 했다(복제 NACL 삭제, 원래 NACL 재연결).
-- Hikari 재연결 확인: 해제 시각 → probe의 첫 `/posts` 200, 첫 `/actuator/health` 200까지 시간을 잰다. 로그는 INFO라 실패 줄(`Connection is not available, request timed out after 30000ms`)은 남고 재연결 성공 줄은 안 남을 수 있어서, probe 결과와 RDS `DatabaseConnections` 회복(태스크 2개 × 풀 10 = 약 20)으로 확인한다.
-- 측정: 차단 종료(01:13:39.3) 직전부터 대기하던 요청이 성공해 재연결 지연은 1초 미만이었다. RDS 연결 수는 01:13분에 20(태스크 2개 × 풀 10)으로 돌아왔다.
+차단 해제는 FIS가 자동으로 했다. 해제 직전부터 기다리던 요청이 바로 성공해 재연결 지연은 1초 미만이었다. RDS 연결 수도 01:13에 20(태스크 2개 × 풀 10)으로 돌아왔다. 재연결 성공은 로그에 남지 않아서 probe와 RDS 연결 수로 확인했다.
 
-## 재발 방지
+지금 설정의 보호 장치:
+- DB 장애가 태스크 교체 루프로 번지지 않는다.
+- 장애는 5xx 비율 알람이 Slack으로 알린다.
+## 다시 잰 결과 (중앙 로그 구축 뒤)
 
-- 지금 설정이 막는 것: DB 장애가 태스크 교체 루프로 번지지 않는다(liveness 분리). 장애는 5xx 비율 알람이 Slack으로 알린다.
-- 남은 위험: 매달린 요청이 Tomcat 스레드(기본 200)를 다 쓰면 liveness도 응답하지 못해 태스크가 교체된다. 이번 실험은 probe 1초 간격이라 동시 요청이 약 60건(30초 대기 × DB를 쓰는 URL 2개의 초당 2건)이어서 여유가 컸다. 실제 트래픽에서는 일어날 수 있다.
-- 제안(구현 안 함): JDBC `socketTimeout`과 쿼리 타임아웃을 두어 매달린 요청을 수 초 안에 실패시킨다. 앱 설정 변경이라 이 이슈 범위 밖이다.
-- 제안(구현 안 함): FIS 템플릿 중지 조건에 비정상 타깃 알람을 걸어, 태스크 교체가 시작되면 실험을 자동으로 멈춘다.
+2026-11-05 01:28 KST에 ECS on EC2 태스크 2개로 같은 실험을 다시 했다. 이번에는 앱 로그가 Elasticsearch로 모이는 상태였다.
 
-## 예상과 달랐던 것
+| 항목 | 2026-11-02 | 2026-11-05 |
+|---|---|---|
+| `/posts` 500, health 503 | 각 565건 | 각 566건 |
+| liveness 실패 | 0 | 0 |
+| 5xx 비율 알람 | 6분 11초 | 5분 58.6초 |
+| 로그에 원인 줄이 남기까지 | 확인 안 함 | 10.7초 |
 
-- ALB 504는 한 건도 없었다. 쿼리 도중 매달린 연결 대신, 놀던 연결의 검증 실패 → 새 연결 대기 30초 경로만 나타났다. 요청이 1초 간격으로 짧게 끝나 쿼리 도중인 연결이 거의 없었기 때문으로 본다.
-- RDS 쪽 연결 수는 차단 직후가 아니라 3~5분 뒤(01:07~01:09)에 0이 됐다. 패킷이 막혀 RDS가 연결 종료를 늦게 알아차렸기 때문이다.
-- 5xx 비율 알람은 Target 5xx가 01:04분부터 분당 100건을 넘었는데도 01:09:49에 울렸다. 5분 중 3분 조건(최소 약 3분)에 ALB 지표 반영 지연이 더해져 차단 시작 후 6분 11초가 걸렸다. 목표 "장애 탐지 5분 이내"는 미달이다. E12에서 같은 시나리오를 다시 잰 결과는 [logging.md](../logging.md) 2절에 있다. 그때도 Grafana 규칙은 이 장애를 보지 못해 앱 5xx 비율 규칙 AppHttp5xxRate를 더했고(#131), 시험에서 500 발생 1분 27.7초 뒤 알림이 발송됐다.
+- 차단 10.7초 뒤 Hikari가 "연결이 닫혔다"는 경고를 남겼고, 같은 요청 ID로 30.7초에 500 응답이 이어졌다. 로그만으로 원인이 DB 연결 경로라는 걸 알 수 있었다([logging.md](../logging.md)).
+- 첫 정상 응답은 차단 시작 9분 59.5초 뒤였다.
+- Grafana 규칙(CPU, 앱 태스크 수, RDS)은 이 장애를 하나도 잡지 못했다. 그래서 앱 5xx 비율 규칙을 Grafana에 추가했고, 시험에서 500이 나고 1분 27.7초 뒤 알림이 나갔다.
 
+## 배운 점과 개선 방향
+
+배운 점:
+- liveness를 DB와 떼어 둔 덕분에 DB 장애가 태스크 교체로 번지지 않았다. 대신 요청은 DB 연결을 30초 기다린 뒤에야 실패해서, 사용자는 오류를 받기까지 30초씩 기다렸다.
+- 로그에는 원인이 10.7초 만에 남았는데 알람은 5분 58.6초 뒤에 울렸다. 앱 오류를 보는 Grafana 규칙이 없었다.
+
+개선 방향:
+- 연결 대기 시간(`connectionTimeout`, 기본 30초)을 줄이고 JDBC 소켓 타임아웃과 쿼리 타임아웃을 두면 된다. 매달린 요청이 몇 초 안에 실패해서 Tomcat 스레드(기본 200)가 바닥나지 않는다. 스레드가 바닥나면 liveness도 응답하지 못해 태스크가 교체된다. 이번에는 동시 요청이 약 60건이라 여유가 있었다([HikariCP](https://github.com/brettwooldridge/HikariCP)).
+- liveness는 지금처럼 DB와 떼어 두는 게 맞다. Spring Boot 문서도 liveness가 외부 시스템에 의존하면 안 된다고 한다. readiness에 DB 점검을 넣을지는 DB 장애 때 트래픽을 어디로 보낼지에 따라 정하면 된다([Spring Boot health groups](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)).
+- FIS 실험의 중지 조건에 비정상 타깃 알람을 걸면 태스크 교체가 시작될 때 실험이 자동으로 멈춘다. Well-Architected도 이런 장애 주입 실험을 정기적으로 돌리라고 권한다([REL12-BP04](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/rel_testing_resiliency_failure_injection_resiliency.html)).
