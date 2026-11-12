@@ -20,7 +20,9 @@ Spring Boot 서비스를 AWS 3-Tier(ALB → ECS on EC2 → RDS)에 올리고, �
 
 ## 아키텍처
 
-<img src="docs/images/00-architecture.png" alt="최종 아키텍처" width="100%">
+<a href="docs/images/00-architecture.png"><img src="docs/images/00-architecture.png" alt="최종 아키텍처" width="100%"></a>
+
+<sub>그림을 누르면 원본 크기로 열립니다.</sub>
 
 | 계층 | 구성 | 선택 이유 |
 |---|---|---|
